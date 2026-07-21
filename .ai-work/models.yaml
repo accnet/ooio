@@ -1,0 +1,4 @@
+planner: off
+executor: codex
+qa: local
+reviewer: off

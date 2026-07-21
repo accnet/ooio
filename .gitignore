@@ -1,0 +1,8 @@
+# AI-Kit workspace state
+.ai-work/*
+!.ai-work/
+!.ai-work/project.yaml
+!.ai-work/models.yaml
+!.ai-work/security.yaml
+!.ai-work/plugins/
+!.ai-work/plugins/**

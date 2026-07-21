@@ -1,0 +1,42 @@
+{
+  "distribution": "commerce-basic",
+  "version": "1.0.0",
+  "wordpress": {
+    "name": "wordpress",
+    "version": "6.9"
+  },
+  "woocommerce": {
+    "name": "woocommerce",
+    "version": "10.2"
+  },
+  "theme": {
+    "name": "store-theme",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "platform-core",
+      "version": "1.0.0"
+    },
+    {
+      "name": "redis-cache",
+      "version": "1.0.0"
+    }
+  ],
+  "muPlugin": {
+    "name": "mu-platform",
+    "version": "1.0.0"
+  },
+  "config": {
+    "profile": "default",
+    "path": "config/default"
+  },
+  "artifact": {
+    "repository": "https://artifacts.example.invalid/woocommerce-cloud",
+    "path": "commerce-basic/1.0.0.tar.zst"
+  },
+  "checksum": {
+    "algorithm": "sha256",
+    "value": "0000000000000000000000000000000000000000000000000000000000000000"
+  }
+}

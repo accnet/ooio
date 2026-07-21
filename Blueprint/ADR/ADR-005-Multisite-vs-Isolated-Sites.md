@@ -1,0 +1,149 @@
+# ADR-005: Runtime Topology — WordPress Multisite vs Isolated Single-sites
+
+## Status
+
+**Open (Preferred Direction: WordPress Multisite)** — xem `Blueprint/DOC-STATUS.md`.
+
+Chỉ chuyển sang `Accepted` khi hoàn thành toàn bộ **Exit Criteria** bên dưới. Không
+đóng ADR nền tảng bằng niềm tin/kinh nghiệm — chỉ đóng bằng dữ liệu kiểm chứng.
+
+Lưu ý về nguồn: toàn bộ `idea/` (idea0 → plan-12) đều mặc định dùng Multisite nhưng
+chưa từng so sánh với phương án thay thế — Multisite là *giả định thừa kế*, ADR này
+tồn tại để việc cân nhắc diễn ra tường minh và có bằng chứng.
+
+## Decision (hiện hành)
+
+- Runtime hiện tại sử dụng **WordPress Multisite trên mỗi Cluster** — đây là topology
+  dùng để triển khai từ Phase 1.
+- **Không** triển khai mô hình Isolated Single-sites ở giai đoạn hiện tại.
+- Kiến trúc SaaS và Go Agent phải **độc lập với Runtime topology** thông qua
+  `WordPress Adapter` / `WordPressClient` — nếu sau này đổi topology, thiệt hại giới
+  hạn ở tầng Runtime, không lan lên Control/Management Plane.
+- Quyết định cuối cùng được xác nhận **sau Phase 5 Stress Test**, trước khi đóng băng
+  API Contract.
+
+## Vì sao ưu tiên Multisite
+
+Khớp với các mục tiêu và quyết định đã Accepted của nền tảng (vài trăm → vài nghìn
+store, shared codebase, Distribution immutable, HyperDB, SaaS điều khiển toàn bộ):
+
+- Provisioning rất nhanh (`wpmu_create_blog()` — vài giây, không cài WordPress mới).
+- Một codebase duy nhất — khớp tự nhiên với mô hình Distribution (ADR-004).
+- MU Plugin viết một lần quản lý toàn Runtime.
+- HyperDB hoạt động tự nhiên với Multisite.
+- Update Distribution một lần cho cả network.
+- Phù hợp tinh thần Runtime-first (ADR-001): đường ngắn nhất tới một Runtime chạy
+  thật để stress test.
+
+## Vì sao chưa Accepted — 4 câu hỏi chưa có dữ liệu thực nghiệm
+
+1. **Isolation**: Store A chiếm 100% CPU/PHP worker → latency của Store B bị ảnh
+   hưởng bao nhiêu? Chưa benchmark. Lưu ý: noisy neighbor được xử lý như một **NFR
+   với chiến lược giảm thiểu nhiều lớp** (xem mục riêng bên dưới), không phải lý do
+   loại Multisite — câu hỏi mở là các lớp đó có đạt mục tiêu cô lập trong thực tế
+   hay không.
+2. **Restore per store** (rủi ro lớn nhất): khôi phục riêng Store 153 từ database
+   chung — lọc bảng `wp_N_` được, nhưng `wp_users`/`wp_usermeta` dùng chung chưa có
+   workflow tách sạch được chứng minh.
+3. **Plugin compatibility**: WooCommerce + plugin thương mại trong Core Plugin Set —
+   có plugin hoạt động không tốt với Multisite. Phải test từng cái.
+4. **Scale**: 100 → 500 → 1000 → 3000 store trên một network — kích thước `wp_blogs`,
+   HyperDB routing, upgrade time. Chưa có số liệu.
+
+## Noisy Neighbor là NFR, không phải lý do loại Multisite
+
+Nhận định nền tảng: nếu một store chiếm 100% CPU thì trên Single Site CPU vẫn 100% —
+khác biệt chỉ là bán kính ảnh hưởng (Multisite: lan sang láng giềng; Single Site: tự
+chịu). Vì vậy giải pháp không phải "bỏ Multisite" mà là chuỗi vận hành:
+
+```
+Detect → Throttle → Move → Dedicated
+```
+
+Đây là cách WordPress.com/Shopify vận hành mô hình chia sẻ hạ tầng: không phải cài
+xong để đó, mà thêm các lớp điều khiển. Runtime phải đáp ứng NFR này qua 4 lớp:
+
+1. **Protection — CDN + Cache**: `Cloudflare → Caddy → FastCGI Cache → Redis → PHP`.
+   Mục tiêu: phần lớn request (hướng tới ~90%) không chạm PHP — noisy neighbor chỉ
+   nguy hiểm khi request đổ vào PHP worker.
+2. **Protection — Rate Limit theo hostname**: Agent cấu hình Caddy giới hạn rps trên
+   từng domain, không để một cơn đột biến (hoặc tấn công) đập thẳng vào PHP pool.
+3. **Protection — PHP Worker Budget**: không để một site chiếm toàn bộ
+   `pm.max_children`. Giai đoạn đầu giới hạn ở tầng reverse proxy/ứng dụng; các gói
+   cao cấp có thể tách PHP-FPM pool riêng hoặc giới hạn theo hostname
+   *(Proposed — cơ chế cụ thể chốt khi triển khai, cần benchmark)*.
+4. **Escalation — Scheduler + Store Migration**: Agent thu thập metrics theo từng
+   store/hostname (CPU, RAM, PHP worker, Redis, MySQL, orders, traffic). Khi một
+   store vượt ngưỡng đủ lâu (ví dụ CPU > 70% trong 30 phút — *ngưỡng Proposed, tinh
+   chỉnh qua vận hành*), Scheduler tạo `Operation: MigrateStore` chuyển store sang
+   cluster/tier phù hợp. HyperDB mapping (Store → Pool) là thứ làm migration khả thi
+   mà **không đổi API** — store lên Enterprise/Dedicated Cluster, ứng dụng không
+   biết gì.
+
+Kéo theo khái niệm **Cluster Tier** (mật độ store theo gói — con số minh hoạ,
+Proposed): Basic ~200 store/cluster, Pro ~80, Enterprise ~10 hoặc Dedicated (1
+store). Store lớn không ở mãi cluster chia sẻ — giống cách Shopify đưa shop lớn lên
+tài nguyên riêng.
+
+Tóm lại: Detection + Protection + Escalation + Enterprise Tier là **chiến lược vận
+hành** giữ được lợi thế provisioning/quản lý tập trung của Multisite. Isolation
+benchmark trong Exit Criteria dùng để kiểm chứng chiến lược này bằng số liệu, không
+phải để phủ quyết Multisite ngay từ đầu.
+
+## Exit Criteria — điều kiện chuyển sang Accepted
+
+Hoàn thành tối thiểu cả bốn hạng mục, mỗi hạng mục ra một báo cáo có số liệu:
+
+1. **Runtime Spike** (Phase 1, tuần đầu): tạo 500–1000 site bằng WP-CLI/script; đo
+   thời gian provisioning mỗi site, kích thước và hiệu năng các bảng multisite
+   (`wp_blogs`, `wp_site`...), HyperDB routing latency. → *Spike Report #001*.
+2. **Isolation Benchmark** (Phase 5): kịch bản noisy-neighbor, đo CPU, PHP Worker,
+   Redis, MySQL lock, Object Cache, Upload IO của store lân cận khi một store quá
+   tải — đo **hai chế độ**: baseline (không có lớp bảo vệ) và có đủ 4 lớp
+   Protection/Escalation ở mục NFR trên, để chứng minh chiến lược giảm thiểu đạt
+   mục tiêu chứ không chỉ đo mức độ tệ. → *Stress Test Report*.
+3. **Restore Test**: thực hiện thành công Backup → chọn một store (ví dụ Store 321)
+   → Restore → Verify, **không ảnh hưởng các store khác** trong cùng database.
+   → *Restore Test Report*.
+4. **Plugin Compatibility Matrix**: toàn bộ Core Plugin Set của Distribution
+   (WooCommerce, Redis Cache, SEO, SMTP, Backup Client, Image Optimization...) chạy
+   đúng trên Multisite (network-activate, per-site settings). → *Compatibility
+   Matrix v1*.
+
+Khi đạt cả bốn, cập nhật ADR này thành:
+
+```yaml
+Status: Accepted
+Decision: Each Runtime Cluster SHALL use a single WordPress Multisite network.
+Rationale: Fast provisioning · Shared runtime · Distribution compatibility ·
+           HyperDB compatibility · Operational simplicity
+Evidence:  Spike Report #001 · Stress Test Report · Restore Test Report ·
+           Plugin Compatibility Matrix v1
+```
+
+Nếu một tiêu chí thất bại không khắc phục được (đặc biệt Restore hoặc Isolation),
+ADR này chuyển sang phương án thay thế bên dưới bằng một ADR mới (Superseded).
+
+## Alternatives Considered
+
+- **Isolated Single-sites** (mỗi store một WordPress install, shared codebase qua
+  symlink kiểu Bedrock): cô lập rõ theo store (PHP-FPM pool riêng, DB riêng),
+  restore per-store tầm thường hoá (một DB = một store); đổi lại provisioning nặng
+  hơn, quản lý N site độc lập, MU Plugin phải viết lại site lifecycle (không còn
+  `wpmu_*`), bỏ HyperDB và tự xây lớp cấp phát DB.
+- **Hybrid — nhiều Multisite network nhỏ trên một node** (mỗi network 50–100 store
+  hoặc theo plan/tier): giới hạn bán kính sự cố và kích thước bảng chung, giữ tốc độ
+  provisioning; thêm một tầng điều phối (store thuộc network nào) cho Scheduler. Là
+  phương án dự phòng tự nhiên nếu Multisite đạt Isolation/Restore nhưng gãy ở Scale.
+
+## Hệ quả
+
+- Đội phát triển triển khai Phase 1–4 theo Multisite mà không chờ ADR đóng — nhưng
+  mọi code phụ thuộc topology phải nằm sau `WordPress Adapter`, không rò rỉ giả định
+  Multisite lên SaaS/Agent core.
+- Nếu giữ Multisite sau kiểm chứng: phải thiết kế bổ sung restore-per-store chính
+  thức, giới hạn tài nguyên theo site, hardening, và identity model giữa SaaS user
+  và `wp_users` dùng chung.
+- Nếu chuyển topology: thiệt hại giới hạn ở tầng Runtime (MU Plugin site lifecycle,
+  HyperDB); ADR-001/002/003, Workflow/Operation và API Contract phía SaaS không đổi
+  — đó chính là lý do phải quyết trước khi đóng băng API Contract.
