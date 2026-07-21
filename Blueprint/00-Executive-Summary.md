@@ -1,5 +1,10 @@
 # Executive Summary
 
+> **Blueprint v1.0 — FROZEN (2026-07-21).** Kiến trúc 3-plane + 5 ADR + API Contract v1
+> đã đóng băng làm cơ sở triển khai. Thay đổi kiến trúc cần ADR mới + tăng version. Xem
+> `VERSION.md`. Tài liệu triển khai: `18` (Control Plane) · `19` (Runtime) · `20` (Agent +
+> Distribution).
+
 ## Mục tiêu
 
 Xây dựng một **WooCommerce Cloud Platform** — nền tảng SaaS kiểu Shopify nhưng dùng

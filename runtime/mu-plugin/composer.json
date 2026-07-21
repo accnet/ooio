@@ -1,0 +1,12 @@
+{
+    "name": "ooio/platform-core",
+    "description": "Localhost-only WordPress MU Plugin REST skeleton",
+    "type": "wordpress-muplugin",
+    "license": "proprietary",
+    "autoload": {
+        "psr-4": {
+            "PlatformCore\\": "src/"
+        }
+    }
+}
+

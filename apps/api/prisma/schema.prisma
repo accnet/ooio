@@ -1,0 +1,291 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Organization {
+  id            String         @id @default(cuid())
+  slug          String         @unique
+  name          String
+  planId        String?        @map("plan_id")
+  status        String         @default("active")
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  plan          Plan?          @relation(fields: [planId], references: [id], onDelete: SetNull)
+  memberships   Membership[]
+  apiKeys       ApiKey[]
+  subscriptions Subscription[]
+  invoices      Invoice[]
+  stores        Store[]
+  operations    Operation[]
+  auditLogs     AuditLog[]
+
+  @@index([planId, status])
+  @@map("organizations")
+}
+
+model User {
+  id          String       @id @default(cuid())
+  email       String       @unique
+  name        String?
+  passwordHash String?      @map("password_hash")
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  memberships Membership[]
+  auditLogs   AuditLog[]
+
+  @@map("users")
+}
+
+model Membership {
+  organizationId String       @map("organization_id")
+  userId         String       @map("user_id")
+  role           String       @default("member")
+  createdAt      DateTime     @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([organizationId, userId])
+  @@index([userId])
+  @@map("memberships")
+}
+
+model ApiKey {
+  id             String       @id @default(cuid())
+  organizationId String       @map("organization_id")
+  name           String
+  keyHash        String       @unique @map("key_hash")
+  scopes         Json?
+  lastUsedAt     DateTime?    @map("last_used_at")
+  expiresAt      DateTime?    @map("expires_at")
+  createdAt      DateTime     @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@map("api_keys")
+}
+
+model Plan {
+  id            String         @id @default(cuid())
+  slug          String         @unique
+  name          String
+  priceCents    Int            @default(0) @map("price_cents")
+  limits        Json?
+  active        Boolean        @default(true)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  subscriptions Subscription[]
+  organizations  Organization[]
+
+  @@map("plans")
+}
+
+model Subscription {
+  id                     String        @id @default(cuid())
+  organizationId         String        @map("organization_id")
+  planId                 String        @map("plan_id")
+  status                 String
+  providerCustomerId     String?       @map("provider_customer_id")
+  providerSubscriptionId String?       @unique @map("provider_subscription_id")
+  currentPeriodEnd      DateTime?    @map("current_period_end")
+  createdAt              DateTime     @default(now())
+  updatedAt              DateTime     @updatedAt
+  organization           Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  plan                   Plan         @relation(fields: [planId], references: [id])
+
+  @@index([organizationId, status])
+  @@map("subscriptions")
+}
+
+model Invoice {
+  id             String       @id @default(cuid())
+  organizationId String       @map("organization_id")
+  amount         Int          @default(0)
+  currency       String       @default("USD")
+  status         String       @default("draft")
+  periodStart    DateTime     @map("period_start")
+  periodEnd      DateTime     @map("period_end")
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@map("invoices")
+}
+
+model Cluster {
+  id        String  @id @default(cuid())
+  name      String  @unique
+  region    String
+  capabilities Json?
+  weight    Int     @default(0)
+  status    String  @default("active")
+  endpoint  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  nodes     Node[]
+  dbPools   DbPool[]
+  stores    Store[]
+  mappingEpoch MappingEpoch?
+
+  @@map("clusters")
+}
+
+model Node {
+  id              String    @id @default(cuid())
+  clusterId       String    @map("cluster_id")
+  nodeIdentifier  String    @unique @map("node_identifier")
+  hostname        String
+  version         String?
+  status          String    @default("pending")
+  capabilities    Json?
+  capacity        Json?
+  health          String?
+  lastHeartbeatAt DateTime? @map("last_heartbeat_at")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  cluster         Cluster   @relation(fields: [clusterId], references: [id], onDelete: Cascade)
+  stores          Store[]
+
+  @@index([clusterId, status])
+  @@map("nodes")
+}
+
+model DbPool {
+  id           String  @id @default(cuid())
+  clusterId    String  @map("cluster_id")
+  name         String
+  host         String
+  port         Int     @default(3306)
+  databaseName String  @map("database_name")
+  username     String
+  secretRef    String? @map("secret_ref")
+  capacity     Int     @default(0)
+  used         Int     @default(0)
+  status       String  @default("healthy")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  cluster      Cluster @relation(fields: [clusterId], references: [id], onDelete: Cascade)
+  stores       Store[]
+  placementHistoryFrom StorePlacementHistory[] @relation("PlacementFromPool")
+  placementHistoryTo   StorePlacementHistory[] @relation("PlacementToPool")
+
+  @@unique([clusterId, name])
+  @@map("db_pools")
+}
+
+model Store {
+  id             String        @id @default(cuid())
+  organizationId String        @map("organization_id")
+  clusterId      String        @map("cluster_id")
+  nodeId         String?       @map("node_id")
+  dbPoolId       String?       @map("db_pool_id")
+  dataset        String?
+  externalId     String        @unique @map("external_id")
+  distribution   String?
+  runtimeVer     String?       @map("runtime_ver")
+  tier           String        @default("standard")
+  blogId         Int?          @map("blog_id")
+  status         String        @default("provisioning")
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  cluster        Cluster       @relation(fields: [clusterId], references: [id])
+  node           Node?         @relation(fields: [nodeId], references: [id])
+  dbPool         DbPool?       @relation(fields: [dbPoolId], references: [id])
+  domains        Domain[]
+  operations     Operation[]
+  placementHistory StorePlacementHistory[]
+
+  @@index([organizationId, status])
+  @@index([clusterId, status])
+  @@map("stores")
+}
+
+model Domain {
+  id         String    @id @default(cuid())
+  storeId    String    @map("store_id")
+  hostname   String    @unique
+  verified   Boolean   @default(false)
+  verifiedAt DateTime? @map("verified_at")
+  tlsStatus  String    @default("pending") @map("tls_status")
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  store      Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId])
+  @@map("domains")
+}
+
+model Operation {
+  id             String       @id @default(cuid())
+  organizationId String       @map("organization_id")
+  storeId        String?      @map("store_id")
+  type           String
+  status         String       @default("queued")
+  progress       Int          @default(0)
+  attempts       Int          @default(0)
+  payload        Json?
+  result         Json?
+  logs           Json?
+  error          String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  store          Store?       @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  placementHistory StorePlacementHistory[]
+
+  @@index([organizationId, status])
+  @@index([storeId, createdAt])
+  @@map("operations")
+}
+
+model StorePlacementHistory {
+  id         String    @id @default(cuid())
+  storeId    String    @map("store_id")
+  fromPoolId String?   @map("from_pool_id")
+  toPoolId   String    @map("to_pool_id")
+  reason     String
+  operationId String?   @map("operation_id")
+  createdAt  DateTime  @default(now())
+  store      Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  fromPool   DbPool?   @relation("PlacementFromPool", fields: [fromPoolId], references: [id], onDelete: SetNull)
+  toPool     DbPool    @relation("PlacementToPool", fields: [toPoolId], references: [id], onDelete: Restrict)
+  operation  Operation? @relation(fields: [operationId], references: [id], onDelete: SetNull)
+
+  @@index([storeId, createdAt])
+  @@index([toPoolId, createdAt])
+  @@map("store_placement_history")
+}
+
+model MappingEpoch {
+  id        String   @id @default(cuid())
+  clusterId String   @unique @map("cluster_id")
+  epoch     Int      @default(1)
+  updatedAt DateTime @updatedAt
+  cluster   Cluster  @relation(fields: [clusterId], references: [id], onDelete: Cascade)
+
+  @@map("mapping_epochs")
+}
+
+model AuditLog {
+  id             String        @id @default(cuid())
+  organizationId String        @map("organization_id")
+  userId         String?       @map("user_id")
+  action         String
+  resourceType   String        @map("resource_type")
+  resourceId     String?       @map("resource_id")
+  metadata       Json?
+  ipAddress      String?       @map("ip_address")
+  createdAt      DateTime      @default(now())
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([resourceType, resourceId])
+  @@map("audit_log")
+}

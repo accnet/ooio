@@ -11,6 +11,27 @@ Lưu ý về nguồn: toàn bộ `idea/` (idea0 → plan-12) đều mặc địn
 chưa từng so sánh với phương án thay thế — Multisite là *giả định thừa kế*, ADR này
 tồn tại để việc cân nhắc diễn ra tường minh và có bằng chứng.
 
+## ⚠️ Cập nhật 2026-07-21 (Blueprint v1.1) — database topology làm lệch cán cân
+
+`ADR-006` (Database Platform) chốt **database-per-store**, và `ADR-007` (Platform Identity)
+chốt **`wp_users` là projection per-store**. Hệ quả: **store database trở nên gần như tự
+chứa** — bảng riêng, user riêng, migration/restore là dump/restore một database.
+
+Điều đó **làm giảm giá trị còn lại của Multisite**: lợi ích chung codebase/plugin đã có sẵn
+từ Distribution + shared filesystem; chỉ còn `wp_blogs`/`wp_site` global và tốc độ
+provisioning qua `wpmu_create_blog`. Trong khi đó Multisite vẫn buộc phải giữ hai bảng
+global đó — đúng thứ làm hỏng tính tự chứa (xem `ADR-006` §9: global không được nằm trên
+hot path).
+
+**Vì vậy ADR-005 KHÔNG được chốt độc lập.** Khi chạy Gate 1 spike:
+- Phải đo **database-per-store ở quy mô** (thời gian `CREATE DATABASE`, ~10.000 database ×
+  ~12 bảng ≈ 120k bảng: `innodb_file_per_table`, `table_open_cache`, `open_files_limit`),
+  **không chỉ** đo subsite prefix `wp_N_*` như harness A1 hiện tại.
+- Kết quả spike phải được đọc **cùng với** `ADR-006`: nếu database-per-store chạy tốt,
+  cán cân nghiêng về **Isolated Single-sites** hơn trước.
+
+Exit Criteria bên dưới vẫn giữ nguyên, **bổ sung** tiêu chí database-per-store ở quy mô.
+
 ## Decision (hiện hành)
 
 - Runtime hiện tại sử dụng **WordPress Multisite trên mỗi Cluster** — đây là topology

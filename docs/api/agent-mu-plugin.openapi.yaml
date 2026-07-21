@@ -1,0 +1,360 @@
+openapi: 3.0.3
+info:
+  title: WooCommerce Cloud Agent to MU Plugin API
+  version: 1.0.0
+  description: |
+    Stable v1 localhost REST contract between the native Go Agent and the MU
+    Platform Plugin. The plugin exposes WordPress operations through
+    WordPress Core APIs and does not contain SaaS billing or subscription
+    logic. Transport selection between localhost REST and a Unix domain socket
+    remains open under ADR-003; WordPressClient must preserve this contract boundary.
+  x-status: Stable
+  x-transport-decision: open
+  x-verified: |
+    2026-07-21 local dev validation (WordPress 7.0.2 multisite): when the MU
+    plugin runs inside WordPress, routes are served under the WP REST base
+    /wp-json, i.e. the effective URL is <site-url>/wp-json/platform/v1/...,
+    and requests MUST use the site's canonical host (e.g. http://localhost:8088)
+    — hitting 127.0.0.1 when the site URL is localhost triggers a 302 redirect.
+    All endpoints below were exercised successfully end-to-end via bearer auth.
+servers:
+  - url: http://localhost:8088/wp-json
+    description: |
+      WordPress REST base. Paths below are relative to this (WP prepends
+      /wp-json). The Agent WordPressClient baseURL must include /wp-json and
+      use the site's canonical host. Binding/auth transport not final (ADR-003).
+security:
+  - bearerAuth: []
+paths:
+  /platform/v1/health:
+    get:
+      operationId: getHealth
+      summary: Get MU Plugin health
+      security: []
+      responses:
+        '200':
+          description: MU Plugin is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /platform/v1/sites:
+    post:
+      operationId: createSite
+      summary: Create a WordPress site
+      description: Creates a site through WordPress Core APIs such as wpmu_create_blog.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSiteRequest'
+      responses:
+        '201':
+          description: Site created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SiteResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /platform/v1/sites/{siteId}:
+    parameters:
+      - $ref: '#/components/parameters/SiteId'
+    delete:
+      operationId: deleteSite
+      summary: Delete a WordPress site
+      responses:
+        '202':
+          description: Site deletion accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SiteDeletionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /platform/v1/sites/{siteId}/suspend:
+    parameters:
+      - $ref: '#/components/parameters/SiteId'
+    post:
+      operationId: suspendSite
+      summary: Suspend a WordPress site
+      responses:
+        '202':
+          description: Site suspension accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SiteStatusResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Site not found
+  /platform/v1/plugins/activate:
+    post:
+      operationId: activatePlugin
+      summary: Activate a plugin
+      description: Activates a plugin through activate_plugin or the appropriate WordPress Core API.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PluginActivationRequest'
+      responses:
+        '200':
+          description: Plugin activated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PluginActivationResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /platform/v1/themes/switch:
+    post:
+      operationId: switchTheme
+      summary: Switch a site's theme
+      description: Switches the active theme through the WordPress Core API.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ThemeSwitchRequest'
+      responses:
+        '200':
+          description: Theme switched
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThemeSwitchResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /platform/v1/users:
+    post:
+      operationId: createUser
+      summary: Create a WordPress user
+      description: Creates a user through wp_insert_user.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserRequest'
+      responses:
+        '201':
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /platform/v1/options:
+    post:
+      operationId: updateOption
+      summary: Update a WordPress option
+      description: Updates an option through update_option.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateOptionRequest'
+      responses:
+        '200':
+          description: Option updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OptionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    SiteId:
+      name: siteId
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^[1-9][0-9]*$'
+
+  responses:
+    BadRequest:
+      description: Invalid WordPress operation input
+    Unauthorized:
+      description: Missing or invalid local bearer credential
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status, plugin, wordpress]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        plugin:
+          type: string
+        wordpress:
+          type: string
+    CreateSiteRequest:
+      type: object
+      required: [domain, title, adminEmail]
+      properties:
+        domain:
+          type: string
+          minLength: 1
+          format: hostname
+        path:
+          type: string
+          default: /
+        title:
+          type: string
+          minLength: 1
+        adminEmail:
+          type: string
+          format: email
+    SiteResponse:
+      type: object
+      required: [siteId, domain, status]
+      properties:
+        siteId:
+          type: string
+        domain:
+          type: string
+        status:
+          type: string
+          enum: [active]
+    SiteDeletionResponse:
+      type: object
+      required: [siteId, status]
+      properties:
+        siteId:
+          type: string
+        status:
+          type: string
+          enum: [deletion_accepted]
+    SiteStatusResponse:
+      type: object
+      required: [siteId, status]
+      properties:
+        siteId:
+          type: string
+        status:
+          type: string
+          enum: [suspended]
+    PluginActivationRequest:
+      type: object
+      required: [siteId, plugin]
+      properties:
+        siteId:
+          type: string
+          pattern: '^[1-9][0-9]*$'
+        plugin:
+          type: string
+          minLength: 1
+        networkWide:
+          type: boolean
+          default: false
+    PluginActivationResponse:
+      type: object
+      required: [siteId, plugin, networkWide, status]
+      properties:
+        siteId:
+          type: string
+        plugin:
+          type: string
+        networkWide:
+          type: boolean
+        status:
+          type: string
+          enum: [active]
+    ThemeSwitchRequest:
+      type: object
+      required: [siteId, theme]
+      properties:
+        siteId:
+          type: string
+          pattern: '^[1-9][0-9]*$'
+        theme:
+          type: string
+          minLength: 1
+    ThemeSwitchResponse:
+      type: object
+      required: [siteId, theme, status]
+      properties:
+        siteId:
+          type: string
+        theme:
+          type: string
+        status:
+          type: string
+          enum: [active]
+    CreateUserRequest:
+      type: object
+      required: [siteId, username, email, role]
+      properties:
+        siteId:
+          type: string
+          pattern: '^[1-9][0-9]*$'
+        username:
+          type: string
+          minLength: 1
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          minLength: 1
+        password:
+          type: string
+          writeOnly: true
+    UserResponse:
+      type: object
+      required: [userId, username, role]
+      properties:
+        userId:
+          type: string
+        username:
+          type: string
+        role:
+          type: string
+    UpdateOptionRequest:
+      type: object
+      required: [siteId, name, value]
+      properties:
+        siteId:
+          type: string
+          pattern: '^[1-9][0-9]*$'
+        name:
+          type: string
+          minLength: 1
+        value: {}
+    OptionResponse:
+      type: object
+      required: [siteId, name, updated]
+      properties:
+        siteId:
+          type: string
+        name:
+          type: string
+        updated:
+          type: boolean

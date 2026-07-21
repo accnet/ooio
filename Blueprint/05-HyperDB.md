@@ -1,5 +1,15 @@
 # HyperDB
 
+> **Cập nhật 2026-07-21 — dùng LudicrousDB thay HyperDB (đổi thư viện, KHÔNG đổi kiến trúc).**
+> HyperDB (không còn được bảo trì) **fatal trên WordPress 6.4+/7.0 + WooCommerce**: (1) `db.php`
+> require `wp-includes/wp-db.php` đã deprecated → `Call to undefined function wp_kses()` lúc
+> bootstrap sớm; (2) để `$wpdb->dbh` null → WooCommerce Action Scheduler gọi `db_server_info()`
+> là chết, wp-admin trắng. **LudicrousDB** (bản fork được bảo trì, cùng API `add_database()`)
+> đã kiểm chứng chạy tốt: `db_server_info()` trả `11.8.8-MariaDB`, Action Scheduler OK,
+> wp-admin OK. Vai trò kiến trúc giữ nguyên: **Scheduler chọn pool → Agent sync mapping →
+> drop-in chỉ route**. `install-node.sh` đã chuyển sang LudicrousDB.
+
+
 ## Vai trò duy nhất: Routing
 
 HyperDB **chỉ định tuyến** truy vấn WordPress tới đúng database vật lý. Không làm gì

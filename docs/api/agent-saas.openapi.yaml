@@ -1,0 +1,312 @@
+openapi: 3.0.3
+info:
+  title: WooCommerce Cloud Agent to SaaS API
+  version: 1.0.0
+  description: |
+    Stable v1 contract for the outbound interface between a native Go Agent
+    and the SaaS control plane. The Agent registers, sends heartbeats, polls
+    pending jobs, and reports job results. Transport selection remains open
+    under ADR-003; REST over HTTPS is the current documented shape.
+  x-status: Stable
+  x-transport-decision: open
+servers:
+  - url: https://control-plane.example.invalid
+    description: Control-plane endpoint placeholder
+security:
+  - bearerAuth: []
+paths:
+  /v1/agents/register:
+    post:
+      operationId: registerAgent
+      summary: Register an agent node
+      description: Exchanges a one-time registration token for an agent identity and access token.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentRegistrationRequest'
+      responses:
+        '201':
+          description: Agent registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentRegistrationResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: Agent identity already registered
+  /v1/agents/{agentId}/heartbeat:
+    parameters:
+      - $ref: '#/components/parameters/AgentId'
+    post:
+      operationId: sendHeartbeat
+      summary: Send an agent heartbeat
+      description: Reports liveness, capacity, capabilities, runtime versions, and optional metrics.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HeartbeatRequest'
+      responses:
+        '200':
+          description: Heartbeat accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HeartbeatResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Agent not found
+  /v1/agents/{agentId}/jobs:
+    parameters:
+      - $ref: '#/components/parameters/AgentId'
+    get:
+      operationId: pollAgentJobs
+      summary: Poll for pending jobs
+      description: Returns jobs assigned to the agent. Polling is outbound-only; the control plane does not SSH or push to the node.
+      responses:
+        '200':
+          description: Pending jobs assigned to the agent
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [jobs]
+                properties:
+                  jobs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AgentJob'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Agent not found
+  /v1/agents/{agentId}/jobs/{jobId}/result:
+    parameters:
+      - $ref: '#/components/parameters/AgentId'
+      - $ref: '#/components/parameters/JobId'
+    post:
+      operationId: reportJobResult
+      summary: Report a job result
+      description: Reports completion or failure of a claimed infrastructure job.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JobResultRequest'
+      responses:
+        '202':
+          description: Result accepted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Agent or job not found
+        '409':
+          description: Job result conflicts with its current state
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    AgentId:
+      name: agentId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+    JobId:
+      name: jobId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+  responses:
+    Unauthorized:
+      description: Missing or invalid bearer token
+  schemas:
+    AgentRegistrationRequest:
+      type: object
+      required: [registrationToken, nodeId, hostname, capabilities, versions]
+      properties:
+        registrationToken:
+          type: string
+          minLength: 1
+        nodeId:
+          type: string
+          minLength: 1
+        hostname:
+          type: string
+          minLength: 1
+        capabilities:
+          $ref: '#/components/schemas/Capabilities'
+        versions:
+          $ref: '#/components/schemas/Versions'
+    AgentRegistrationResponse:
+      type: object
+      required: [agentId, accessToken, expiresIn]
+      properties:
+        agentId:
+          type: string
+        accessToken:
+          type: string
+        expiresIn:
+          type: integer
+          minimum: 1
+    HeartbeatRequest:
+      type: object
+      required: [status, capabilities, versions, capacity]
+      properties:
+        status:
+          type: string
+          enum: [ready, busy, draining, maintenance]
+        capabilities:
+          $ref: '#/components/schemas/Capabilities'
+        versions:
+          $ref: '#/components/schemas/Versions'
+        capacity:
+          $ref: '#/components/schemas/Capacity'
+        metrics:
+          $ref: '#/components/schemas/MetricsSnapshot'
+    Capacity:
+      type: object
+      required: [cpuPercent, memoryPercent, diskPercent, siteCount]
+      properties:
+        cpuPercent:
+          type: number
+          minimum: 0
+          maximum: 100
+        memoryPercent:
+          type: number
+          minimum: 0
+          maximum: 100
+        diskPercent:
+          type: number
+          minimum: 0
+          maximum: 100
+        siteCount:
+          type: integer
+          minimum: 0
+    HeartbeatResponse:
+      type: object
+      required: [acceptedAt, pollAfterSeconds]
+      properties:
+        acceptedAt:
+          type: string
+          format: date-time
+        pollAfterSeconds:
+          type: integer
+          minimum: 1
+    MetricsSnapshot:
+      type: object
+      required: [node]
+      properties:
+        node:
+          $ref: '#/components/schemas/NodeMetrics'
+        stores:
+          type: array
+          items:
+            $ref: '#/components/schemas/StoreMetric'
+    NodeMetrics:
+      type: object
+      required: [cpuPercent, memoryPercent, diskPercent, siteCount]
+      properties:
+        cpuPercent:
+          type: number
+          minimum: 0
+          maximum: 100
+        memoryPercent:
+          type: number
+          minimum: 0
+          maximum: 100
+        diskPercent:
+          type: number
+          minimum: 0
+          maximum: 100
+        phpVersion:
+          type: string
+        mysqlVersion:
+          type: string
+        siteCount:
+          type: integer
+          minimum: 0
+    StoreMetric:
+      type: object
+      required: [storeId, hostname, cpuPercent, memoryPercent, diskPercent]
+      properties:
+        storeId:
+          type: string
+        hostname:
+          type: string
+        cpuPercent:
+          type: number
+          minimum: 0
+          maximum: 100
+        memoryPercent:
+          type: number
+          minimum: 0
+          maximum: 100
+        diskPercent:
+          type: number
+          minimum: 0
+          maximum: 100
+    AgentJob:
+      type: object
+      required: [id, type, payload, leasedUntil]
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [create-store, delete-store, activate-plugin, switch-theme, create-user, set-option, backup-store, restore-store, issue-ssl]
+        payload:
+          type: object
+          additionalProperties: true
+        leasedUntil:
+          type: string
+          format: date-time
+    JobResultRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [succeeded, failed]
+        result: {}
+        error:
+          $ref: '#/components/schemas/JobError'
+    JobError:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+    Capabilities:
+      type: object
+      additionalProperties:
+        type: boolean
+      example:
+        wordpress: true
+        multisite: true
+        hyperdb: true
+        ssl: true
+    Versions:
+      type: object
+      required: [agent]
+      additionalProperties:
+        type: string
+      example:
+        agent: 1.0.0
+        wordpress: 6.9
+        php: 8.4

@@ -1,3 +1,10 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.tsbuildinfo
+
 # AI-Kit workspace state
 .ai-work/*
 !.ai-work/
