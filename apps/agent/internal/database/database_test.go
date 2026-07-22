@@ -2,10 +2,20 @@ package database
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 )
+
+type fakeAllocationLogger struct {
+	messages []string
+}
+
+func (f *fakeAllocationLogger) Printf(format string, args ...any) {
+	f.messages = append(f.messages, fmt.Sprintf(format, args...))
+}
 
 type fakeAllocator struct {
 	requests []AllocationRequest
@@ -43,8 +53,8 @@ func TestAllocateForSiteSelectsAvailablePoolAndRecordsConnection(t *testing.T) {
 	if allocation.SiteID != "store-7" || allocation.PoolID != "pool-b" {
 		t.Fatalf("allocation = %#v", allocation)
 	}
-	if allocation.Connection.Database != "store_7" {
-		t.Fatalf("connection = %#v", allocation.Connection)
+	if allocation.Dataset != "store_7" || allocation.ConnectionRef != "secret://pool-b" || allocation.Epoch != 1 {
+		t.Fatalf("runtime allocation = %#v", allocation)
 	}
 	if len(allocator.requests) != 1 || allocator.requests[0].Pool.ID != "pool-b" {
 		t.Fatalf("allocator requests = %#v, want only available pool", allocator.requests)
@@ -116,32 +126,56 @@ func TestAllocateForSiteRejectsConfiguredFullPools(t *testing.T) {
 	}
 }
 
-func TestGenerateHyperDBConfigMapsSitesToPools(t *testing.T) {
+func TestAllocationContainsNoConnectionCredentials(t *testing.T) {
 	allocator := &fakeAllocator{
 		byPool: map[string]ConnectionInfo{
-			"pool-a": {Host: "mysql-a", Port: 3306, Database: "store_a"},
-			"pool-b": {Host: "mysql-b", Port: 3306, Database: "store_b"},
+			"pool-a": {Host: "mysql-a", Port: 3306, Database: "store_a", Username: "db-user", Password: "db-password"},
 		},
 	}
-	manager := NewManager(allocator, []Pool{{ID: "pool-a", Capacity: 1}, {ID: "pool-b"}})
-	if _, err := manager.AllocateForSite(context.Background(), "store-a"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := manager.AllocateForSite(context.Background(), "store-b"); err != nil {
-		t.Fatal(err)
-	}
-
-	config, err := manager.GenerateHyperDBConfig()
+	manager := NewManager(allocator, []Pool{{ID: "pool-a"}})
+	allocation, err := manager.AllocateForSite(context.Background(), "store-a")
 	if err != nil {
-		t.Fatalf("GenerateHyperDBConfig() error = %v", err)
+		t.Fatal(err)
 	}
-	if !strings.Contains(config, `"store-a"`) || !strings.Contains(config, `"poolId": "pool-a"`) {
-		t.Fatalf("config = %s, want store-a route", config)
+	encoded, err := json.Marshal(allocation)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(config, `"store-b"`) || !strings.Contains(config, `"poolId": "pool-b"`) {
-		t.Fatalf("config = %s, want store-b route", config)
+	if strings.Contains(string(encoded), "db-password") || strings.Contains(string(encoded), "mysql-a") || strings.Contains(string(encoded), "siteId") {
+		t.Fatalf("allocation contains connection details: %s", encoded)
 	}
-	if !strings.HasSuffix(config, "\n") {
-		t.Fatal("config must end with a newline")
+	if err := allocation.Validate(); err != nil {
+		t.Fatalf("allocation validation error = %v", err)
+	}
+	if allocation.ConnectionRef != "secret://pool-a" {
+		t.Fatalf("connectionRef = %q", allocation.ConnectionRef)
+	}
+	if allocation.Epoch != 1 {
+		t.Fatalf("epoch = %d, want 1", allocation.Epoch)
+	}
+}
+
+func TestNoopAllocationApplierFailsClosedAndLogsMetadata(t *testing.T) {
+	logger := &fakeAllocationLogger{}
+	allocation := Allocation{PoolID: "pool-a", Dataset: "store_7", ConnectionRef: "secret://pool-a", Epoch: 3}
+
+	err := (NoopAllocationApplier{Logger: logger}).ApplyAllocation(context.Background(), allocation)
+	if !errors.Is(err, ErrRuntimeTopologyNotConfigured) {
+		t.Fatalf("ApplyAllocation() error = %v, want ErrRuntimeTopologyNotConfigured", err)
+	}
+	if len(logger.messages) != 1 || !strings.Contains(logger.messages[0], "pool-a") || !strings.Contains(logger.messages[0], "store_7") {
+		t.Fatalf("logs = %#v, want one allocation metadata log", logger.messages)
+	}
+	if strings.Contains(logger.messages[0], "secret://") {
+		t.Fatalf("log exposed connection reference: %q", logger.messages[0])
+	}
+}
+
+func TestNoopAllocationApplierRejectsCredentialLikeAllocation(t *testing.T) {
+	err := (NoopAllocationApplier{}).ApplyAllocation(context.Background(), Allocation{
+		PoolID: "pool-a", Dataset: "store_7", ConnectionRef: "mysql://user:password@host/db", Epoch: 1,
+	})
+	if err == nil || !strings.Contains(err.Error(), "secret://") {
+		t.Fatalf("ApplyAllocation() error = %v, want secret reference validation error", err)
 	}
 }

@@ -1,12 +1,12 @@
 // Package database coordinates database allocation before WordPress site
-// creation and produces the routing data consumed by HyperDB.
+// creation and exposes the topology-neutral runtime configuration seam.
 package database
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 )
@@ -17,6 +17,9 @@ var (
 	ErrNoAvailablePool = errors.New("no available database pool")
 	// ErrPoolFull lets an allocator ask the manager to try the next pool.
 	ErrPoolFull = errors.New("database pool is full")
+	// ErrRuntimeTopologyNotConfigured makes the default runtime applier fail
+	// closed until the ADR-005 topology is selected and implemented.
+	ErrRuntimeTopologyNotConfigured = errors.New("runtime topology applier is not configured")
 )
 
 // Pool describes a database pool available to this agent. Capacity is an
@@ -54,19 +57,81 @@ type Allocator interface {
 	Allocate(context.Context, AllocationRequest) (ConnectionInfo, error)
 }
 
-// Allocation is the result that must be passed to the subsequent site
-// creation step. Site creation is intentionally not part of this manager.
+// Allocation is the topology-neutral result passed to runtime configuration.
+//
+// SiteID is retained for the existing provisioning handoff. Runtime
+// configuration must use PoolID, Dataset, ConnectionRef, and Epoch only. In
+// particular, credentials are deliberately absent: ConnectionRef points to a
+// local secret such as secret://pool-a, which the agent resolves locally.
 type Allocation struct {
-	SiteID     string         `json:"siteId"`
-	PoolID     string         `json:"poolId"`
-	Connection ConnectionInfo `json:"connection"`
+	SiteID        string `json:"-"`
+	PoolID        string `json:"poolId"`
+	Dataset       string `json:"dataset"`
+	ConnectionRef string `json:"connectionRef"`
+	Epoch         int    `json:"epoch"`
 }
 
-// HyperDBRoute is the per-site routing record emitted by
-// GenerateHyperDBConfig.
-type HyperDBRoute struct {
-	PoolID     string         `json:"poolId"`
-	Connection ConnectionInfo `json:"connection"`
+// AllocationApplier materializes a DAS allocation in the selected runtime
+// topology. Isolated and Multisite implementations intentionally remain
+// outside this package because they operate at different points in the
+// request lifecycle and may be implemented by different processes.
+type AllocationApplier interface {
+	ApplyAllocation(context.Context, Allocation) error
+}
+
+var _ AllocationApplier = NoopAllocationApplier{}
+
+// AllocationLogger is the small logging seam used by the default applier.
+// It keeps the implementation easy to test without introducing a logging
+// dependency into the agent.
+type AllocationLogger interface {
+	Printf(string, ...any)
+}
+
+// NoopAllocationApplier is the default until ADR-005 selects a runtime
+// topology. It records the allocation metadata and fails explicitly; it never
+// reports that runtime configuration was materialized.
+type NoopAllocationApplier struct {
+	Logger AllocationLogger
+}
+
+// ApplyAllocation logs a clear handoff and fails closed. The connection
+// reference is intentionally not logged because it is a secret lookup handle.
+func (a NoopAllocationApplier) ApplyAllocation(ctx context.Context, allocation Allocation) error {
+	if ctx == nil {
+		return fmt.Errorf("runtime allocation requires a context")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := allocation.Validate(); err != nil {
+		return err
+	}
+
+	logger := a.Logger
+	if logger == nil {
+		logger = log.Default()
+	}
+	logger.Printf("runtime allocation pending topology implementation: poolId=%q dataset=%q epoch=%d", allocation.PoolID, allocation.Dataset, allocation.Epoch)
+	return ErrRuntimeTopologyNotConfigured
+}
+
+// Validate checks the fields shared by every runtime topology. It rejects
+// raw connection details by construction: Allocation has only a secret ref.
+func (a Allocation) Validate() error {
+	if strings.TrimSpace(a.PoolID) == "" {
+		return fmt.Errorf("allocation pool ID is required")
+	}
+	if strings.TrimSpace(a.Dataset) == "" {
+		return fmt.Errorf("allocation dataset is required")
+	}
+	if !strings.HasPrefix(strings.TrimSpace(a.ConnectionRef), "secret://") || strings.TrimSpace(a.ConnectionRef) == "secret://" {
+		return fmt.Errorf("allocation connectionRef must be a secret:// reference")
+	}
+	if a.Epoch <= 0 {
+		return fmt.Errorf("allocation epoch must be positive")
+	}
+	return nil
 }
 
 // Manager selects pools and records successful allocations. The mutex keeps
@@ -143,9 +208,11 @@ func (m *Manager) AllocateForSite(ctx context.Context, siteID string) (Allocatio
 		}
 
 		allocation := Allocation{
-			SiteID:     siteID,
-			PoolID:     pool.ID,
-			Connection: connection,
+			SiteID:        siteID,
+			PoolID:        pool.ID,
+			Dataset:       allocationDataset(siteID, connection.Database),
+			ConnectionRef: "secret://" + pool.ID,
+			Epoch:         1,
 		}
 		m.pools[index].Used++
 		m.allocations[siteID] = allocation
@@ -155,31 +222,13 @@ func (m *Manager) AllocateForSite(ctx context.Context, siteID string) (Allocatio
 	return Allocation{}, ErrNoAvailablePool
 }
 
-// GenerateHyperDBConfig returns deterministic JSON mapping site IDs to their
-// allocated pool and connection. It is a handoff artifact for the HyperDB
-// routing layer; it does not write files or mutate runtime configuration.
-func (m *Manager) GenerateHyperDBConfig() (string, error) {
-	if m == nil {
-		return "", fmt.Errorf("database manager is not configured")
-	}
-
-	m.mu.Lock()
-	routes := make(map[string]HyperDBRoute, len(m.allocations))
-	for siteID, allocation := range m.allocations {
-		routes[siteID] = HyperDBRoute{
-			PoolID:     allocation.PoolID,
-			Connection: allocation.Connection,
-		}
-	}
-	m.mu.Unlock()
-
-	data, err := json.MarshalIndent(routes, "", "  ")
-	if err != nil {
-		return "", fmt.Errorf("encode HyperDB config: %w", err)
-	}
-	return string(data) + "\n", nil
-}
-
 func poolAtCapacity(pool Pool) bool {
 	return pool.Capacity > 0 && pool.Used >= pool.Capacity
+}
+
+func allocationDataset(siteID, databaseName string) string {
+	if databaseName = strings.TrimSpace(databaseName); databaseName != "" {
+		return databaseName
+	}
+	return "store_" + siteID
 }

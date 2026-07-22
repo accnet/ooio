@@ -16,6 +16,8 @@ The harness measures the Runtime Spike exit criterion from
 - end-to-end latency of a site-scoped WordPress option read through the configured
   HyperDB routing path;
 - database-per-store creation time and the minimum WordPress table footprint;
+- isolated WordPress provisioning time split into database creation, shared-core
+  linking, wp-config.php generation, and `wp core install`;
 - database count, table count, storage bytes, MySQL table/file limits, and the
   database server's file descriptor count.
 
@@ -29,6 +31,7 @@ documented baseline and preserve the generated CSV files with the report.
 - A test database and disposable network. Do not use production data.
 - HyperDB configured if routing latency is being measured.
 - MySQL or MariaDB client available as `mysql`, or set `MYSQL_BIN` to its path.
+- `curl` is required only when the optional MU Plugin REST comparison is enabled.
 - A disposable MySQL or MariaDB server with permission to create and drop the
   `store_<numeric-id>` databases. Prefer an option file for credentials; the
   scripts also accept `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_SOCKET`, `MYSQL_USER`,
@@ -57,6 +60,14 @@ export SPIKE_DATABASE_PREFIX=store_
 export SPIKE_LOG_DIR=/var/tmp/spike-001-databases-500
 scripts/spike/create-databases.sh
 scripts/spike/measure-databases.sh
+
+# Isolated provisioning versus Multisite, sequentially on the same host.
+export SPIKE_WORDPRESS_SOURCE=/srv/wordpress
+export SPIKE_ISOLATED_SITES=100
+export SPIKE_LOG_DIR=/var/tmp/spike-001-isolated-100
+export SPIKE_MULTISITE_WP_PATH=/srv/wordpress
+export SPIKE_MULTISITE_REST_URL=http://127.0.0.1/wp-json/platform/v1/sites
+scripts/spike/measure-isolated-provisioning.sh
 
 # Only after evidence is copied to the report and the run is disposable:
 SPIKE_TEARDOWN_CONFIRM=DELETE_SPIKE_SITES scripts/spike/teardown.sh --yes
@@ -98,6 +109,29 @@ including database count, table count, data/index/total bytes,
 `Open_files`, and the actual `/proc/<mysqld-pid>/fd` count. Set `MYSQL_SERVER_PID`
 when automatic `mysqld`/`mariadbd` discovery is not suitable. The server values are
 read-only observations and are not changed by the harness.
+
+`measure-isolated-provisioning.sh` writes one row per isolated store to
+`isolated-provisioning.csv`:
+
+`store_number,store_slug,database_name,install_root,started_at_utc,finished_at_utc,create_database_ms,link_source_ms,wp_config_ms,wp_core_install_ms,filesystem_bytes,database_table_count,database_data_bytes,database_index_bytes,database_total_bytes,status,error_stage`
+
+Set `SPIKE_WORDPRESS_SOURCE` (or `WP_PATH`) to a WordPress core tree. The script
+creates a separate database and installation root for every store, symlinking the
+shared core tree and keeping `wp-config.php` and `wp-content` per-store. The
+`filesystem_bytes` value is the writable per-store footprint (`wp-config.php` and
+`wp-content`); shared core bytes are intentionally not counted once per store.
+`SPIKE_ISOLATED_SITES` defaults to 100, and `SPIKE_ISOLATED_START` resumes from a
+store number after an interrupted run. A failed or partial current store must be
+cleaned up before resuming at the next number.
+
+When `SPIKE_MULTISITE_WP_PATH` and/or `SPIKE_MULTISITE_REST_URL` is set, the same
+script provisions a second, sequential cohort and writes `multisite-comparison.csv`.
+The wp-cli method uses `wp site create`; the REST method calls the MU Plugin
+`/platform/v1/sites` endpoint. This makes the comparison run on the same host and
+at the same time as the isolated measurement. Compare its output with Spike #003's
+historical Multisite reference values: about 382 ms through the MU Plugin REST
+path and about 1,400 ms through wp-cli. Those values are evidence for comparison,
+not a substitute for the fresh run.
 
 ## Safety and cleanup
 
