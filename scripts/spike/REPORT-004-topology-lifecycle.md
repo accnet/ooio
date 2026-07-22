@@ -13,6 +13,8 @@
 |---|---|---|---|
 | **Provisioning** (wp-cli) | **1.461 ms** (n=50) | **2.306 ms** (n=100) | Isolated chậm 1,6× |
 | **Clone** | **1.856 ms** (n=1) | **1.166 ms** (n=13) | Multisite chậm 1,6× |
+| **Delete** | **962 ms** (n=6) | **306 ms** (n=9) | Multisite chậm **3,8×** |
+| **Upgrade Distribution** | *(một codebase)* | **symlink 21 ms** / copy 1.351 ms | xem Phát hiện 4 |
 | **Portability** | — | — | **chưa đo — xem cuối** |
 
 Cả hai đường cong provisioning **phẳng qua toàn bộ mẫu** — không có suy giảm theo quy mô ở
@@ -90,6 +92,37 @@ Bảng là **tham số vị trí**. Dùng sai làm clone fail **sau khi đã cop
 phần đắt tiền đã chạy, chỉ bước ghi lại URL hỏng. Một quy trình migration thật mà mắc lỗi
 này sẽ để lại store nửa vời.
 
+## Phát hiện 4 — Delete là chỗ Multisite thua nặng nhất
+
+| | Multisite | Isolated |
+|---|---|---|
+| Cách làm | `wpmu_delete_blog(N, true)` — xoá 10 bảng trong database dùng chung | `DROP DATABASE` + `rm -rf` |
+| Thời gian | **962 ms** | **306 ms** |
+| Dung lượng thu hồi | 560 KB | 680 KB |
+
+**Chậm 3,8×**, và khoảng cách sẽ giãn thêm với store WooCommerce thật (~50 bảng thay vì 10).
+Đây là thao tác diễn ra **nhiều hơn tạo** trong vòng đời một nền tảng.
+
+## Phát hiện 5 — Phép đo lẽ ra bênh Multisite lại cho kết quả ngược
+
+`Upgrade Distribution` được đưa vào bộ đo **vì nó là phép đo duy nhất có khả năng nghiêng
+về Multisite** — lợi thế "một codebase, cập nhật một lần cho cả network". Kết quả:
+
+| Cách của Isolated | Thời gian/store | File tạo | Đĩa thêm |
+|---|---|---|---|
+| **symlink tới codebase chung** | **21 ms** | 1 | **0 MB** |
+| copy riêng mỗi store | 1.351 ms | 10.818 | **145 MB** |
+
+Chênh **64×** về thời gian và **145 MB mỗi store**.
+
+**Isolated dùng symlink đạt đúng thứ Multisite tự hào:** cập nhật Distribution = thay bản
+gốc một lần, cả N store thấy ngay, không tốn thêm byte nào. Với 1.000 store: symlink
+**0 GB**, copy riêng **145 GB** — nên "copy riêng" không phải phương án nghiêm túc, và
+**so sánh công bằng là Multisite vs Isolated-symlink: hai bên bằng nhau**.
+
+Đây là lý do phải đo cả hai cách của Isolated. Nếu chỉ đo bản copy riêng, kết quả sẽ kết
+luận sai rằng Multisite có lợi thế 64× ở khâu này.
+
 ## Chưa đo: Portability
 
 Harness `measure-store-portability.sh` đã sẵn sàng nhưng **chưa chạy được**: nó đòi bảng
@@ -109,8 +142,7 @@ số nào được ghi ở đây mà chưa đo**.
 - **Clone Multisite n=1.** Đủ để chứng minh nó chạy và tốn bao nhiêu bước, chưa đủ để nói
   về phân phối.
 - **WSL2, không phải phần cứng đích.** Số tương đối dùng được; số tuyệt đối thì không.
-- **Chưa đo Delete và Upgrade Distribution** — hai phép đo còn lại trong
-  `measure-store-lifecycle.sh`.
+- **Delete n=6/9, Upgrade n=3** — đủ để thấy khoảng cách, chưa đủ nói về phân phối.
 
 ## Ý nghĩa cho ADR-005
 
@@ -121,5 +153,28 @@ Báo cáo này **không chốt** ADR-005. Nó bổ sung:
   trong ba lần thử, trong đó một lỗi (3a) có thể **trộn dữ liệu giữa các tenant** mà không
   báo gì.
 
+- Delete — thao tác lặp lại nhiều nhất trong vòng đời — Multisite **chậm 3,8×**.
+- Lợi thế "một codebase" của Multisite **không còn là lợi thế**: Isolated dùng symlink đạt
+  cùng kết quả với 21 ms và 0 byte thêm mỗi store.
+
 Điểm cuối đáng cân nhắc cùng luận điểm PII đã ghi trong `ADR-005`: với Multisite, ranh giới
 giữa các store là **một quy ước đặt tên**, và quy ước thì có thể viết sai.
+
+## Phụ lục — sáu lỗi harness lộ ra khi chạy thật
+
+Harness được viết nhưng chưa từng chạy; sáu lỗi chỉ xuất hiện khi đo thật. Ghi lại vì hai
+lỗi cuối thuộc loại nguy hiểm nhất: **chúng cho ra con số trông hợp lý**.
+
+| # | Lỗi | Hậu quả |
+|---|---|---|
+| 1 | `mysqldump` nhận cờ `--batch`/`--skip-column-names` của client `mysql` | mọi dump/restore fail |
+| 2 | vòng lặp dùng process substitution | không đọc được danh sách bảng |
+| 3 | `LIKE 'wp_2_%'` không escape | kéo 110 bảng thay vì 10 |
+| 4 | `CREATE TABLE ... LIKE` dưới `sql_mode` nghiêm ngặt | MySQL 8.4 từ chối bảng WordPress vừa tạo |
+| 5 | `wp search-replace --tables` (cờ không tồn tại) | clone fail **sau khi** đã copy xong bảng |
+| 6 | `record_operation` multisite delete **thiếu một cột** | mọi giá trị lệch trái: `elapsed 1.022 ms` bị ghi thành `0.435 ms` |
+| 7 | `read -r _ before _ ...` bỏ qua trường đầu | ghi `data_length 180224` vào cột số bảng |
+
+Lỗi 6 và 7 **không làm chương trình dừng** — chúng ghi số sai vào CSV. Chỉ phát hiện được
+vì `0.435 ms` mâu thuẫn với trực giác "xoá 10 bảng không thể nhanh hơn nửa mili giây".
+Một báo cáo dựa trên số đó sẽ dẫn tới quyết định kiến trúc sai.

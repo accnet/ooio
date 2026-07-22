@@ -339,12 +339,18 @@ upgrade_copy_impl() {
   cp -a -- "$SPIKE_DISTRIBUTION_SOURCE/." "$target/"
 }
 
+# NOTE: the CSV has both source_id and target_id. A delete has no target, so an
+# empty field must still be written — omitting it shifted every later column left
+# by one and made elapsed_ms read as cpu_user_s (1022ms reported as 0.435ms).
 run_delete_multisite() {
   local item="$1" database blog_id prefix root_before root_after
   local before after before_bytes after_bytes reclaimed fs_before fs_after
   local start_ms started finished elapsed status=pass error_stage='' timing="$TMP_ROOT/delete-multisite-$item.time"
   database="$(multisite_database)"; blog_id="$item"; prefix="$(multisite_prefix)${blog_id}_"; root="$SPIKE_MULTISITE_ROOT"
-  read -r _ before _ before_bytes <<<"$(multisite_table_metrics "$database" "$prefix")"
+  # prefix_metrics returns: count, data_length, index_length, total. Take the
+  # COUNT first like the isolated path does — skipping it reported data_length
+  # (180224) as the table count.
+  read -r before _ _ before_bytes <<<"$(multisite_table_metrics "$database" "$prefix")"
   fs_before="$(path_bytes "$root")"; file_snapshot "$root" "$TMP_ROOT/before"
   started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; start_ms="$(now_ms)"
   if ! run_timed "$timing" delete_multisite_impl "$blog_id"; then status=failed; error_stage=delete; fi
@@ -352,7 +358,7 @@ run_delete_multisite() {
   read -r _ after _ after_bytes <<<"$(multisite_table_metrics "$database" "$prefix")"
   fs_after="$(path_bytes "$root")"; file_snapshot "$root" "$TMP_ROOT/after"; file_diff "$TMP_ROOT/before" "$TMP_ROOT/after"
   before_bytes=$((before_bytes + fs_before)); after_bytes=$((after_bytes + fs_after)); reclaimed=$((before_bytes - after_bytes))
-  record_operation delete multisite wpmu_delete_blog "$item" "$blog_id" "$started" "$finished" "$elapsed" "$cpu_user_s" "$cpu_system_s" "$cpu_total_s" "$files_created" "$files_deleted" "$before_bytes" "$after_bytes" "$reclaimed" "$before" "$after" not_measured "$status" "$error_stage" 'Multisite deletion is expected to be slower than creation; compare with provisioning.csv.'
+  record_operation delete multisite wpmu_delete_blog "$item" "$blog_id" '' "$started" "$finished" "$elapsed" "$cpu_user_s" "$cpu_system_s" "$cpu_total_s" "$files_created" "$files_deleted" "$before_bytes" "$after_bytes" "$reclaimed" "$before" "$after" not_measured "$status" "$error_stage" 'Multisite deletion is expected to be slower than creation; compare with provisioning.csv.'
 }
 
 run_delete_isolated() {

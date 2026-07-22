@@ -132,6 +132,13 @@ _Đính chính (không tăng version — sửa số liệu, không đổi quyế
   đặt tên**, có thể viết sai. Status ADR-005 **không đổi**: còn thiếu portability, delete,
   upgrade distribution.
 
+- **2026-07-22** — `ADR-005`: hoàn tất bộ đo vòng đời trong **Spike Report #004**.
+  **Delete: Multisite 962 ms / Isolated 306 ms — chậm 3,8×**, thao tác lặp lại nhiều hơn tạo.
+  **Upgrade Distribution — phép đo duy nhất có thể bênh Multisite — cho kết quả ngược:**
+  Isolated dùng symlink đạt 21 ms và 0 MB thêm mỗi store, tức lợi thế "một codebase, cập
+  nhật một lần" **không còn là lợi thế riêng của Multisite**. Status vẫn **không đổi**: còn
+  thiếu portability (chặn ở HPOS của WooCommerce).
+
 _Lịch sử version_
 - **v1.1** — 2026-07-21 — Current. + AP-001/AP-002 (principles), ADR-006 Database Platform,
   ADR-007 Platform Identity; ADR-005 cập nhật tham chiếu database topology.

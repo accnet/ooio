@@ -91,10 +91,12 @@ JOIN nhưng không giải quyết bài toán PII, nên là giải pháp sai cho 
 Lần đầu đo **cả hai topology trên cùng một engine**. Xem
 `scripts/spike/REPORT-004-topology-lifecycle.md`.
 
-| Phép đo | Multisite | Isolated |
-|---|---|---|
-| Provisioning (wp-cli) | **1.461 ms** (n=50) | **2.306 ms** (n=100) |
-| Clone | **1.856 ms** (n=1) | **1.166 ms** (n=13) |
+| Phép đo | Multisite | Isolated | |
+|---|---|---|---|
+| Provisioning (wp-cli) | **1.461 ms** (n=50) | **2.306 ms** (n=100) | Isolated chậm 1,6× |
+| Clone | **1.856 ms** (n=1) | **1.166 ms** (n=13) | Multisite chậm 1,6× |
+| **Delete** | **962 ms** (n=6) | **306 ms** (n=9) | **Multisite chậm 3,8×** |
+| **Upgrade Distribution** | *(một codebase)* | **symlink 21 ms · 0 MB** | hai bên **bằng nhau** |
 
 **Ba điều số liệu này nói ra:**
 
@@ -128,13 +130,31 @@ WordPress vừa tạo (`Invalid default value for 'comment_date'` — WordPress 
 khi tạo, phiên clone thì không), và `wp search-replace` không có cờ `--tables` nên clone
 hỏng **sau khi đã copy xong toàn bộ bảng**.
 
+**4. Delete là chỗ Multisite thua nặng nhất — 3,8×.** `wpmu_delete_blog` xoá 10 bảng trong
+database dùng chung; Isolated `DROP DATABASE` một phát. Khoảng cách sẽ giãn thêm với store
+WooCommerce thật (~50 bảng). Đây là thao tác **lặp lại nhiều hơn tạo** trong vòng đời.
+
+**5. Phép đo lẽ ra bênh Multisite lại cho kết quả ngược.** `Upgrade Distribution` được đưa
+vào bộ đo *vì* nó là phép đo duy nhất có thể nghiêng về Multisite — lợi thế "một codebase".
+Nhưng Isolated dùng **symlink** đạt đúng điều đó:
+
+| Cách của Isolated | Thời gian/store | Đĩa thêm |
+|---|---|---|
+| **symlink tới codebase chung** | **21 ms** | **0 MB** |
+| copy riêng mỗi store | 1.351 ms | 145 MB |
+
+Với 1.000 store: symlink **0 GB**, copy riêng **145 GB**. "Copy riêng" không phải phương án
+nghiêm túc, nên **so sánh công bằng là Multisite vs Isolated-symlink — hai bên bằng nhau**.
+Cập nhật Distribution = thay bản gốc một lần, cả N store thấy ngay, ở **cả hai** topology.
+
+> Luận điểm mạnh nhất còn lại của Multisite — "một codebase, cập nhật một lần" — **không
+> còn là lợi thế riêng của nó**.
+
 **Vẫn còn thiếu để chốt:**
 - **Portability** (export sang network khác): harness sẵn sàng nhưng chặn ở việc bật HPOS
   của WooCommerce. Kết luận cấu trúc đã chắc (Isolated cần **0** lần ánh xạ user id;
   Multisite phải ánh xạ `post_author`, `comment_user_id`, `customer_id`, `wp_N_capabilities`),
   nhưng **chưa có số đo**.
-- **Delete** và **Upgrade Distribution** — hai phép đo còn lại trong harness vòng đời.
-  `Upgrade Distribution` là phép đo duy nhất có khả năng **nghiêng về Multisite**.
 - Site đo **chưa có WooCommerce đầy đủ** (12 bảng thay vì ~50), và **WSL2 không phải phần
   cứng đích**.
 Vì vậy ADR này tiếp tục để Open/Preferred Direction hiện hành; không thể chốt ADR nền
