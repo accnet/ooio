@@ -12,7 +12,8 @@ import {
   StoreOperationsResponse,
   Subscription,
 } from '../api';
-import { StatusPill, useOperationPolling } from './Stores';
+import { StatusPill } from '../components/StatusPill';
+import { useOperationPolling } from '../hooks/useOperationPolling';
 
 const TERMINAL_OPERATION_STATES = ['succeeded', 'failed', 'cancelled'];
 

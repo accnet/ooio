@@ -25,8 +25,12 @@ export class AdminController {
   }
 
   @Get('stores')
-  listStores(@Query() query: AdminListQuery, @Req() request: AuthenticatedRequest) {
-    return this.admin.listStores(query, this.actor(request));
+  listStores(
+    @Query() query: AdminListQuery,
+    @Query('missingBlogId') missingBlogId: string | undefined,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.admin.listStores(query, this.actor(request), missingBlogId);
   }
 
   private actor(request: AuthenticatedRequest) {
@@ -36,4 +40,3 @@ export class AdminController {
     };
   }
 }
-

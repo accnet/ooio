@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/accnet/ooio/apps/agent/internal/backup"
@@ -70,15 +71,36 @@ func (f *fakeRestoreManager) RestoreSite(_ context.Context, blogID, backupKey st
 }
 
 func TestHandlerCreatesStoreThroughWordPressSeam(t *testing.T) {
-	fake := &fakeWordPressClient{}
+	fake := &fakeWordPressClient{result: wpadapter.Result{Payload: []byte(`{"siteId":"7"}`)}}
 	handler := NewHandler(fake, nil, nil, nil)
 	payload := json.RawMessage(`{"domain":"store.example.test","title":"Store"}`)
 
-	if err := handler.Handle(context.Background(), jobrunner.Job{Type: CreateStore, Payload: payload}); err != nil {
+	result, err := handler.Handle(context.Background(), jobrunner.Job{Type: CreateStore, Payload: payload})
+	if err != nil {
 		t.Fatalf("Handle() error = %v", err)
+	}
+	if string(result) != `{"blogId":7}` {
+		t.Fatalf("result = %s", result)
 	}
 	if fake.operation.Name != "create-site" || string(fake.operation.Payload) != string(payload) || fake.operation.Resource != "" {
 		t.Fatalf("operation = %#v", fake.operation)
+	}
+}
+
+func TestHandlerRejectsCreateStoreResponseWithoutBlogID(t *testing.T) {
+	// A response with no usable siteId must fail loudly. Reporting a fabricated
+	// id would make the Control Plane publish a mapping pointing at the wrong blog.
+	handler := NewHandler(&fakeWordPressClient{result: wpadapter.Result{Payload: []byte(`{}`)}}, nil, nil, nil)
+
+	result, err := handler.Handle(context.Background(), jobrunner.Job{
+		Type:    CreateStore,
+		Payload: json.RawMessage(`{"domain":"store.example.test","title":"Store"}`),
+	})
+	if err == nil || !strings.Contains(err.Error(), "siteId") {
+		t.Fatalf("Handle() error = %v, want missing siteId error", err)
+	}
+	if result != nil {
+		t.Fatalf("result = %s, want nil", result)
 	}
 }
 
@@ -86,7 +108,7 @@ func TestHandlerDeletesStoreThroughWordPressSeam(t *testing.T) {
 	fake := &fakeWordPressClient{}
 	handler := NewHandler(fake, nil, nil, nil)
 
-	if err := handler.Handle(context.Background(), jobrunner.Job{
+	if _, err := handler.Handle(context.Background(), jobrunner.Job{
 		Type:    DeleteStore,
 		Payload: json.RawMessage(`{"siteId":"site-1"}`),
 	}); err != nil {
@@ -108,14 +130,14 @@ func TestHandlerRejectsInvalidJobsAndPropagatesClientErrors(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if err := NewHandler(&fakeWordPressClient{}, nil, nil, nil).Handle(context.Background(), test.job); err == nil {
+			if _, err := NewHandler(&fakeWordPressClient{}, nil, nil, nil).Handle(context.Background(), test.job); err == nil {
 				t.Fatal("Handle() error = nil")
 			}
 		})
 	}
 
 	fake := &fakeWordPressClient{err: errors.New("MU Plugin unavailable")}
-	err := NewHandler(fake, nil, nil, nil).Handle(context.Background(), jobrunner.Job{
+	_, err := NewHandler(fake, nil, nil, nil).Handle(context.Background(), jobrunner.Job{
 		Type:    CreateStore,
 		Payload: json.RawMessage(`{"domain":"store.example.test","title":"Store"}`),
 	})
@@ -139,7 +161,7 @@ func TestHandlerDispatchesRemainingWordPressOperations(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			fake := &fakeWordPressClient{}
 			payload := json.RawMessage(`{"siteId":"site-1","value":"value"}`)
-			if err := NewHandler(fake, nil, nil, nil).Handle(context.Background(), jobrunner.Job{Type: test.typeName, Payload: payload}); err != nil {
+			if _, err := NewHandler(fake, nil, nil, nil).Handle(context.Background(), jobrunner.Job{Type: test.typeName, Payload: payload}); err != nil {
 				t.Fatalf("Handle() error = %v", err)
 			}
 			if fake.operation.Name != test.operation || string(fake.operation.Payload) != string(payload) {
@@ -155,27 +177,27 @@ func TestHandlerDispatchesSSLBackupAndRestoreJobs(t *testing.T) {
 	restoreManager := &fakeRestoreManager{}
 	handler := NewHandler(nil, sslManager, backupManager, restoreManager)
 
-	if err := handler.Handle(context.Background(), jobrunner.Job{Type: IssueSSL, Payload: json.RawMessage(`{"domain":"store.example.test"}`)}); err != nil {
+	if _, err := handler.Handle(context.Background(), jobrunner.Job{Type: IssueSSL, Payload: json.RawMessage(`{"domain":"store.example.test"}`)}); err != nil {
 		t.Fatalf("issue SSL error = %v", err)
 	}
 	if sslManager.domain != "store.example.test" {
 		t.Fatalf("SSL domain = %q", sslManager.domain)
 	}
 
-	if err := handler.Handle(context.Background(), jobrunner.Job{Type: BackupStore, Payload: json.RawMessage(`{}`)}); err != nil {
+	if _, err := handler.Handle(context.Background(), jobrunner.Job{Type: BackupStore, Payload: json.RawMessage(`{}`)}); err != nil {
 		t.Fatalf("database backup error = %v", err)
 	}
-	if err := handler.Handle(context.Background(), jobrunner.Job{Type: BackupStore, Payload: json.RawMessage(`{"kind":"files","files":[{"path":"/var/www/wp-config.php"}]}`)}); err != nil {
+	if _, err := handler.Handle(context.Background(), jobrunner.Job{Type: BackupStore, Payload: json.RawMessage(`{"kind":"files","files":[{"path":"/var/www/wp-config.php"}]}`)}); err != nil {
 		t.Fatalf("files backup error = %v", err)
 	}
 	if backupManager.databaseCalls != 1 || backupManager.filesCalls != 1 || len(backupManager.files) != 1 || backupManager.files[0].Path != "/var/www/wp-config.php" {
 		t.Fatalf("backup calls = %#v", backupManager)
 	}
 
-	if err := handler.Handle(context.Background(), jobrunner.Job{Type: RestoreStore, Payload: json.RawMessage(`{"backupKey":"backups/database/full.sql"}`)}); err != nil {
+	if _, err := handler.Handle(context.Background(), jobrunner.Job{Type: RestoreStore, Payload: json.RawMessage(`{"backupKey":"backups/database/full.sql"}`)}); err != nil {
 		t.Fatalf("full restore error = %v", err)
 	}
-	if err := handler.Handle(context.Background(), jobrunner.Job{Type: RestoreStore, Payload: json.RawMessage(`{"blogId":"7","backupKey":"backups/database/full.sql"}`)}); err != nil {
+	if _, err := handler.Handle(context.Background(), jobrunner.Job{Type: RestoreStore, Payload: json.RawMessage(`{"blogId":"7","backupKey":"backups/database/full.sql"}`)}); err != nil {
 		t.Fatalf("site restore error = %v", err)
 	}
 	if restoreManager.siteCalls != 1 || restoreManager.blogID != "7" || restoreManager.backupKey != "backups/database/full.sql" {

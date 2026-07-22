@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { ConfigService } from '@nestjs/config';
 import { Prisma, Operation } from '@prisma/client';
@@ -33,6 +33,7 @@ interface WorkflowQueueData {
 
 @Injectable()
 export class WorkflowService {
+  private readonly logger = new Logger(WorkflowService.name);
   private readonly defaultMaxAttempts: number;
 
   constructor(
@@ -243,6 +244,20 @@ export class WorkflowService {
         data.error = error;
       }
       const changed = await client.operation.update({ where: { id: operationId }, data });
+
+      // The Agent's blog ID is the runtime identity needed for pool mapping.
+      // Persist it in this transaction so a successful operation cannot commit
+      // without its corresponding Control Plane mapping metadata.
+      if (operation.status !== 'succeeded' && status === 'succeeded' && operation.type === 'create-store' && operation.storeId) {
+        const blogId = this.blogIdFromResult(result);
+        if (blogId === null) {
+          this.logger.warn(`create-store operation missing valid blogId; operation=${operation.id} store=${operation.storeId}`);
+        }
+        await tx.store.update({
+          where: { id: operation.storeId },
+          data: { blogId },
+        });
+      }
       if (operation.status !== status && (status === 'succeeded' || status === 'failed')) {
         await this.events.record(tx, {
           type: status === 'succeeded' ? 'OperationCompleted' : 'OperationFailed',
@@ -321,5 +336,18 @@ export class WorkflowService {
       return payload as OperationPayload;
     }
     return {};
+  }
+
+  private blogIdFromResult(result: unknown): number | null {
+    if (!result || typeof result !== 'object' || Array.isArray(result)) {
+      return null;
+    }
+    const blogId = (result as Record<string, unknown>).blogId;
+    return typeof blogId === 'number'
+      && Number.isSafeInteger(blogId)
+      && blogId > 0
+      && blogId <= 2147483647
+      ? blogId
+      : null;
   }
 }

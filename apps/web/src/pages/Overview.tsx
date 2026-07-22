@@ -7,7 +7,7 @@ import {
   getStoreAnalytics,
   StoreAnalytics,
 } from '../api';
-import { StatusPill } from './Stores';
+import { StatusPill } from '../components/StatusPill';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 

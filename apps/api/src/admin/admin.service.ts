@@ -49,6 +49,7 @@ const STORE_LIST_SELECT = {
   tier: true,
   distribution: true,
   runtimeVer: true,
+  blogId: true,
   createdAt: true,
   updatedAt: true,
   organization: { select: { id: true, name: true, slug: true } },
@@ -138,14 +139,15 @@ export class AdminService {
     };
   }
 
-  async listStores(query: AdminListQuery, actor: AdminActor) {
+  async listStores(query: AdminListQuery, actor: AdminActor, missingBlogId?: string) {
     const page = this.page(query.page);
     const limit = this.limit(query.limit);
     const organizationId = this.normalized(query.organizationId);
     const status = this.normalized(query.status);
+    const reconciliationFilter = this.blogIdFilter(missingBlogId);
     const where: Prisma.StoreWhereInput = {
       ...(organizationId ? { organizationId } : {}),
-      ...(status ? { status } : {}),
+      ...(reconciliationFilter ? { status: 'active', blogId: null } : status ? { status } : {}),
     };
 
     await this.audit.recordAdminAccess({
@@ -153,7 +155,13 @@ export class AdminService {
       userId: actor.userId,
       action: 'admin.stores.list',
       resourceType: 'store',
-      metadata: { organizationId: organizationId || null, status: status || null, page, limit },
+      metadata: {
+        organizationId: organizationId || null,
+        status: reconciliationFilter ? 'active' : status || null,
+        missingBlogId: reconciliationFilter,
+        page,
+        limit,
+      },
     });
 
     const [total, stores] = await Promise.all([
@@ -214,5 +222,15 @@ export class AdminService {
   private normalized(value: string | undefined): string | undefined {
     const normalized = value?.trim();
     return normalized || undefined;
+  }
+
+  private blogIdFilter(value: string | undefined): boolean {
+    if (value === undefined || value === 'false') {
+      return false;
+    }
+    if (value === 'true') {
+      return true;
+    }
+    throw new BadRequestException('missingBlogId must be true or false');
   }
 }
