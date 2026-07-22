@@ -82,8 +82,12 @@ now_ms() {
   fi
 }
 
+# Connection flags only. `--batch` and `--skip-column-names` belong to the mysql
+# client and are REJECTED by mysqldump ("unknown option '--batch'", exit 2), so
+# they are added by mysql_cmd rather than shared here. Sharing them made every
+# dump/restore fail while the surrounding pipeline still looked plausible.
 mysql_args() {
-  MYSQL_ARGS=(--batch --skip-column-names)
+  MYSQL_ARGS=()
   [[ -n "$MYSQL_HOST" ]] && MYSQL_ARGS+=(--host="$MYSQL_HOST")
   [[ -n "$MYSQL_USER" ]] && MYSQL_ARGS+=(--user="$MYSQL_USER")
   [[ -n "$MYSQL_PORT" ]] && MYSQL_ARGS+=(--port="$MYSQL_PORT")
@@ -98,9 +102,9 @@ mysql_cmd() {
   fi
   mysql_args
   if [[ -n "$database" ]]; then
-    MYSQL_PWD="$SPIKE_DB_PASSWORD" "$MYSQL_BIN" "${MYSQL_ARGS[@]}" "$database" "$@"
+    MYSQL_PWD="$SPIKE_DB_PASSWORD" "$MYSQL_BIN" --batch --skip-column-names "${MYSQL_ARGS[@]}" "$database" "$@"
   else
-    MYSQL_PWD="$SPIKE_DB_PASSWORD" "$MYSQL_BIN" "${MYSQL_ARGS[@]}" "$@"
+    MYSQL_PWD="$SPIKE_DB_PASSWORD" "$MYSQL_BIN" --batch --skip-column-names "${MYSQL_ARGS[@]}" "$@"
   fi
 }
 
@@ -131,9 +135,19 @@ database_metrics() {
   fi
 }
 
+# In SQL LIKE, `_` is a SINGLE-CHARACTER WILDCARD, so 'wp_2_%' also matches
+# wp_20_commentmeta, wp_21_posts and every other two-digit blog. That silently
+# pulls another store's tables into a clone. Escaping makes the prefix literal.
+sql_like_prefix() {
+  local value="${1//\\/\\\\}"
+  value="${value//_/\\_}"
+  value="${value//%/\\%}"
+  printf '%s' "$value"
+}
+
 prefix_metrics() {
   local database="$1" prefix="$2"
-  mysql_cmd "$database" --execute="SELECT COUNT(*), COALESCE(SUM(data_length), 0), COALESCE(SUM(index_length), 0), COALESCE(SUM(data_length + index_length), 0) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name LIKE '${prefix}%';" |
+  mysql_cmd "$database" --execute="SELECT COUNT(*), COALESCE(SUM(data_length), 0), COALESCE(SUM(index_length), 0), COALESCE(SUM(data_length + index_length), 0) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name LIKE '$(sql_like_prefix "$prefix")%';" |
     tr '\t' ' ' | tr -d '\r'
 }
 
@@ -266,20 +280,30 @@ sql_quote() {
 clone_multisite_impl() {
   local database="$1" source_prefix="$2" target_prefix="$3"
   local source_blog="$SPIKE_MULTISITE_SOURCE_BLOG_ID" target_blog="$SPIKE_MULTISITE_TARGET_BLOG_ID"
-  local source_table target_table suffix table_list=''
+  local source_table target_table suffix table_list='' source_tables
   local blogs_table="${source_prefix%${source_blog}_}blogs" usermeta_table="${source_prefix%${source_blog}_}usermeta"
   [[ "$source_prefix" != "$target_prefix" ]] || die 'Multisite clone prefixes must differ'
   [[ "$(mysql_cmd "$database" --execute="SELECT COUNT(*) FROM \`${blogs_table}\` WHERE blog_id = ${source_blog};" | tr -d '\r\n')" == 1 ]] || die "source blog does not exist: $source_blog"
 
+  # Materialize the query before iterating so mysql failures are visible to
+  # set -e/pipefail instead of becoming an empty process-substitution stream.
+  source_tables="$(mysql_cmd "$database" --execute="SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name LIKE '$(sql_like_prefix "$source_prefix")%';" | tr -d '\r' | sort)"
   while IFS= read -r source_table; do
     [[ -z "$source_table" ]] && continue
     suffix="${source_table#"$source_prefix"}"
     target_table="${target_prefix}${suffix}"
     [[ "$source_table" == "$source_prefix"* && "$target_table" =~ ^[A-Za-z0-9_]+$ ]] || die "unsafe Multisite table name: $source_table"
-    mysql_cmd "$database" --execute="DROP TABLE IF EXISTS \`${target_table}\`; CREATE TABLE \`${target_table}\` LIKE \`${source_table}\`; INSERT INTO \`${target_table}\` SELECT * FROM \`${source_table}\`;"
+    # WordPress creates tables with DEFAULT '0000-00-00 00:00:00' by relaxing
+    # sql_mode itself. A default MySQL 8.4 session has NO_ZERO_DATE, so
+    # CREATE TABLE ... LIKE REJECTS the very table WordPress just made
+    # ("ERROR 1067: Invalid default value for 'comment_date'"). Relax the mode
+    # for this session so the clone reproduces the source faithfully instead of
+    # failing on a value the running site already contains. MariaDB is permissive
+    # by default, which is why this only appears on MySQL.
+    mysql_cmd "$database" --execute="SET SESSION sql_mode='NO_ENGINE_SUBSTITUTION'; DROP TABLE IF EXISTS \`${target_table}\`; CREATE TABLE \`${target_table}\` LIKE \`${source_table}\`; INSERT INTO \`${target_table}\` SELECT * FROM \`${source_table}\`;"
     if [[ -n "$table_list" ]]; then table_list+=","; fi
     table_list+="$target_table"
-  done < <(mysql_cmd "$database" --execute="SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name LIKE '${source_prefix}%';" | tr -d '\r' | sort)
+  done <<<"$source_tables"
 
   local clone_domain="${SPIKE_MULTISITE_CLONE_DOMAIN:-clone-${target_blog}.example.invalid}"
   local clone_path="${SPIKE_MULTISITE_CLONE_PATH:-/clone-${target_blog}/}"
@@ -289,8 +313,15 @@ clone_multisite_impl() {
   [[ -n "$SPIKE_MULTISITE_SOURCE_URL" ]] || die 'SPIKE_MULTISITE_SOURCE_URL is required for Multisite clone'
   [[ -n "$SPIKE_MULTISITE_TARGET_URL" ]] || die 'SPIKE_MULTISITE_TARGET_URL is required for Multisite clone'
   [[ -n "$table_list" ]] || die "no source tables found for prefix $source_prefix"
+  # wp search-replace takes tables as POSITIONAL arguments; there is no --tables
+  # flag ("unknown --tables parameter. Did you mean '--table'?"). Passing the
+  # comma-joined list as a flag made every Multisite clone fail after the tables
+  # had already been copied — the expensive part had run, only the rewrite failed.
+  local -a search_replace_tables=()
+  IFS=',' read -r -a search_replace_tables <<<"$table_list"
   wp_cmd search-replace "$SPIKE_MULTISITE_SOURCE_URL" "$SPIKE_MULTISITE_TARGET_URL" \
-    --url="$SPIKE_MULTISITE_TARGET_URL" --tables="$table_list" --skip-columns=guid \
+    "${search_replace_tables[@]}" \
+    --url="$SPIKE_MULTISITE_TARGET_URL" --skip-columns=guid \
     --precise --recurse-objects --quiet
 }
 

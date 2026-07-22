@@ -123,6 +123,15 @@ _Đính chính (không tăng version — sửa số liệu, không đổi quyế
   provisioning của Isolated vẫn chưa đo (harness có, chưa chạy); **không đổi Status hoặc
   Preferred Direction của ADR-005**.
 
+- **2026-07-22** — `ADR-005`: bổ sung **Spike Report #004**, lần đầu đo **cả hai topology
+  trên cùng engine (MySQL 8.4)**. Provisioning: Multisite 1.461 ms / Isolated 2.306 ms —
+  nhưng 87% chi phí Isolated nằm ở `wp core install`, bước thay được bằng import database
+  mẫu. Clone: Multisite 1.856 ms / Isolated 1.166 ms — chênh lệch thật là **1 bước so với
+  5 bước**. Phát hiện nghiêm trọng: `LIKE 'wp_2_%'` không escape kéo **110 bảng thay vì 10**
+  (`_` là ký tự đại diện trong SQL) — với Multisite ranh giới giữa store là một **quy ước
+  đặt tên**, có thể viết sai. Status ADR-005 **không đổi**: còn thiếu portability, delete,
+  upgrade distribution.
+
 _Lịch sử version_
 - **v1.1** — 2026-07-21 — Current. + AP-001/AP-002 (principles), ADR-006 Database Platform,
   ADR-007 Platform Identity; ADR-005 cập nhật tham chiếu database topology.

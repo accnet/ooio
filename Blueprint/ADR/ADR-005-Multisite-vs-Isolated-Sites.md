@@ -86,7 +86,57 @@ của **toàn bộ tenant**.
 database global xuống từng pool để JOIN chạy cùng server. Cách này giải quyết bài toán
 JOIN nhưng không giải quyết bài toán PII, nên là giải pháp sai cho nền tảng thương mại.
 
-Vẫn còn thiếu **chi phí provisioning của Isolated**: harness đã có nhưng **CHƯA CHẠY**.
+## ✅ Đã đo 2026-07-22 — Spike Report #004 (cùng nền MySQL 8.4)
+
+Lần đầu đo **cả hai topology trên cùng một engine**. Xem
+`scripts/spike/REPORT-004-topology-lifecycle.md`.
+
+| Phép đo | Multisite | Isolated |
+|---|---|---|
+| Provisioning (wp-cli) | **1.461 ms** (n=50) | **2.306 ms** (n=100) |
+| Clone | **1.856 ms** (n=1) | **1.166 ms** (n=13) |
+
+**Ba điều số liệu này nói ra:**
+
+1. **Đổi engine không phải đánh đổi hiệu năng** — Multisite trên MariaDB 1.400 ms, trên
+   MySQL 8.4 là 1.461 ms (+4%). Việc chuyển sang MySQL thuần tuý phục vụ đường nâng cấp
+   H2–H4 của `ADR-006`.
+2. **Isolated không chậm hơn về bản chất.** 87% chi phí nằm ở `wp core install` (1.998 ms
+   trên 2.306 ms) — bước thay được bằng import database mẫu. Multisite thì `wpmu_create_blog`
+   đã là đường ngắn nhất, **không còn gì để tối ưu**. Con số 1,6× là khoảng cách giữa bản
+   chưa tối ưu và bản đã tối ưu hết.
+3. **Chênh lệch thật của Clone không nằm ở thời gian mà ở SỐ BƯỚC:** Isolated là một lệnh
+   `mysqldump | mysql`; Multisite cần copy từng bảng → viết lại tiền tố → cập nhật
+   `wp_blogs` → tạo lại `wp_N_capabilities` trong `wp_usermeta` **global** → `search-replace`.
+   **Một bước so với năm.**
+
+**Phát hiện nghiêm trọng nhất — rủi ro trộn dữ liệu giữa tenant.** Cần ba lần sửa lỗi mới
+làm Multisite clone chạy đúng, và một trong ba là:
+
+```
+LIKE 'wp\_2\_%'   →   10 bảng   (đúng: chỉ blog 2)
+LIKE 'wp_2_%'     →  110 bảng   (sai: kéo cả wp_20_*, wp_21_*, …)
+```
+
+Trong SQL `_` là ký tự đại diện. **Bất kỳ code nào lọc bảng theo `wp_N_` mà quên escape sẽ
+trộn dữ liệu giữa các store — và im lặng cho tới khi network có blog hai chữ số.** Với
+Multisite, ranh giới giữa các store là **một quy ước đặt tên**, mà quy ước thì có thể viết
+sai. Với Isolated, ranh giới là database.
+
+Hai lỗi còn lại cũng đáng ghi: MySQL 8.4 từ chối `CREATE TABLE ... LIKE` chính bảng
+WordPress vừa tạo (`Invalid default value for 'comment_date'` — WordPress tự nới `sql_mode`
+khi tạo, phiên clone thì không), và `wp search-replace` không có cờ `--tables` nên clone
+hỏng **sau khi đã copy xong toàn bộ bảng**.
+
+**Vẫn còn thiếu để chốt:**
+- **Portability** (export sang network khác): harness sẵn sàng nhưng chặn ở việc bật HPOS
+  của WooCommerce. Kết luận cấu trúc đã chắc (Isolated cần **0** lần ánh xạ user id;
+  Multisite phải ánh xạ `post_author`, `comment_user_id`, `customer_id`, `wp_N_capabilities`),
+  nhưng **chưa có số đo**.
+- **Delete** và **Upgrade Distribution** — hai phép đo còn lại trong harness vòng đời.
+  `Upgrade Distribution` là phép đo duy nhất có khả năng **nghiêng về Multisite**.
+- Site đo **chưa có WooCommerce đầy đủ** (12 bảng thay vì ~50), và **WSL2 không phải phần
+  cứng đích**.
 Vì vậy ADR này tiếp tục để Open/Preferred Direction hiện hành; không thể chốt ADR nền
 tảng bằng niềm tin, đúng mục đích ban đầu của ADR-005.
 
