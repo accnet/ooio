@@ -11,6 +11,7 @@ MYSQL_USER="${MYSQL_USER:-}"
 MYSQL_PORT="${MYSQL_PORT:-}"
 MYSQL_SOCKET="${MYSQL_SOCKET:-}"
 SPIKE_DATABASES="${SPIKE_DATABASES:-500}"
+SPIKE_DATABASE_START="${SPIKE_DATABASE_START:-1}"
 SPIKE_DATABASE_PREFIX="${SPIKE_DATABASE_PREFIX:-store_}"
 SPIKE_LOG_DIR="${SPIKE_LOG_DIR:-./spike-001-databases}"
 SPIKE_OUTPUT="${SPIKE_OUTPUT:-${SPIKE_LOG_DIR}/database-provisioning.csv}"
@@ -50,6 +51,20 @@ now_ms() {
 }
 
 schema_sql() {
+  # SPIKE_SCHEMA_FILE lets the harness use a REAL store schema instead of the
+  # WordPress-core-only fallback below. This matters: a live WooCommerce store
+  # measured 48 tables, not the 12 that core alone creates, so provisioning and
+  # table-cache numbers taken from the fallback understate reality by ~4x.
+  # Generate one with:
+  #   mysqldump --no-data <db> $(wp_2_ tables) | sed 's/`wp_2_/`wp_/g' > store-schema.sql
+  if [[ -n "${SPIKE_SCHEMA_FILE:-}" ]]; then
+    if [[ ! -r "$SPIKE_SCHEMA_FILE" ]]; then
+      printf 'SPIKE_SCHEMA_FILE is not readable: %s\n' "$SPIKE_SCHEMA_FILE" >&2
+      exit 2
+    fi
+    cat "$SPIKE_SCHEMA_FILE"
+    return
+  fi
   cat <<'SQL'
 CREATE TABLE IF NOT EXISTS `wp_posts` (
   `ID` bigint unsigned NOT NULL AUTO_INCREMENT,
@@ -176,9 +191,16 @@ SQL
 }
 
 mkdir -p "$(dirname "$SPIKE_OUTPUT")"
-printf 'database_name,started_at_utc,finished_at_utc,create_database_ms,create_tables_ms,total_ms,table_count,status\n' >"$SPIKE_OUTPUT"
+# Only write the header on a fresh run. Resuming with '>' would truncate the CSV
+# and destroy the timings already collected, which are the point of the exercise.
+if (( SPIKE_DATABASE_START == 1 )) || [[ ! -s "$SPIKE_OUTPUT" ]]; then
+  printf 'database_name,started_at_utc,finished_at_utc,create_database_ms,create_tables_ms,total_ms,table_count,status\n' >"$SPIKE_OUTPUT"
+fi
 
-for ((database_id = 1; database_id <= SPIKE_DATABASES; database_id++)); do
+# SPIKE_DATABASE_START lets a long run resume after an interruption instead of
+# tearing down and starting over: a 2000-database run takes ~40 minutes and the
+# databases already created are still valid evidence.
+for ((database_id = SPIKE_DATABASE_START; database_id <= SPIKE_DATABASES; database_id++)); do
   database_name="${SPIKE_DATABASE_PREFIX}${database_id}"
   started_at_utc="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   started_ms="$(now_ms)"

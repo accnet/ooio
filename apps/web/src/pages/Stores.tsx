@@ -1,14 +1,19 @@
 import { FormEvent, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { ApiError, createStore, getOperation, getStores, Operation, Store } from '../api';
 
 const initialForm = { domain: '', path: '/', title: '', adminEmail: '' };
 
-function StatusPill({ status }: { status: string }) {
+export function StatusPill({ status }: { status: string }) {
   return <span className={`status-pill status-${status}`}>{status.replace('-', ' ')}</span>;
 }
 
-function OperationStatus({ operationId }: { operationId: string }) {
-  const [operation, setOperation] = useState<Operation | null>(null);
+export function useOperationPolling<T>(
+  load: () => Promise<T>,
+  shouldContinue: (value: T) => boolean,
+  dependencies: readonly unknown[],
+) {
+  const [value, setValue] = useState<T | null>(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -16,10 +21,11 @@ function OperationStatus({ operationId }: { operationId: string }) {
     let timer: number | undefined;
     const poll = async () => {
       try {
-        const next = await getOperation(operationId);
+        const next = await load();
         if (!active) return;
-        setOperation(next);
-        if (!['succeeded', 'failed', 'cancelled'].includes(next.status)) timer = window.setTimeout(poll, 2500);
+        setValue(next);
+        setError('');
+        if (shouldContinue(next)) timer = window.setTimeout(poll, 2500);
       } catch (reason) {
         if (active) setError(reason instanceof Error ? reason.message : 'Unable to read operation status.');
       }
@@ -29,7 +35,19 @@ function OperationStatus({ operationId }: { operationId: string }) {
       active = false;
       if (timer) window.clearTimeout(timer);
     };
-  }, [operationId]);
+    // Callers provide the request identity and keep the request itself stable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, dependencies);
+
+  return { value, error };
+}
+
+function OperationStatus({ operationId }: { operationId: string }) {
+  const { value: operation, error } = useOperationPolling(
+    () => getOperation(operationId),
+    (next) => !['succeeded', 'failed', 'cancelled'].includes(next.status),
+    [operationId],
+  );
 
   return (
     <section className="operation-panel" aria-live="polite">
@@ -100,7 +118,7 @@ export default function Stores() {
         </section>
         <section className="panel panel-muted" aria-labelledby="store-list-title">
           <div className="panel-heading"><div><p className="eyebrow">Inventory</p><h2 id="store-list-title">Your stores</h2></div><span className="count-badge">{stores.length}</span></div>
-          {loading ? <p className="state-message">Loading stores...</p> : error && !stores.length ? <p className="alert alert-error">{error}</p> : !stores.length ? <p className="state-message">No stores yet. Create the first environment to see it here.</p> : <div className="store-list">{stores.map((store) => <article className="store-row" key={store.id}><div><h3>{store.domains?.[0]?.domain || store.externalId || store.id.slice(0, 12)}</h3><p className="muted">{store.id} {store.nodeId ? `· node ${store.nodeId}` : '· awaiting node placement'}</p></div><StatusPill status={store.status} /></article>)}</div>}
+          {loading ? <p className="state-message">Loading stores...</p> : error && !stores.length ? <p className="alert alert-error">{error}</p> : !stores.length ? <p className="state-message">No stores yet. Create the first environment to see it here.</p> : <div className="store-list">{stores.map((store) => <Link className="store-row store-row-link" to={`/stores/${encodeURIComponent(store.id)}`} key={store.id}><div><h3>{store.domains?.[0]?.hostname || store.externalId || store.id.slice(0, 12)}</h3><p className="muted">{store.externalId || store.id}</p></div><StatusPill status={store.status} /></Link>)}</div>}
         </section>
       </div>
       {operationId && <OperationStatus operationId={operationId} />}

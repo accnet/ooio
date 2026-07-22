@@ -8,6 +8,7 @@ export const OPERATION_TYPES = [
   'backup-store',
   'restore-store',
   'issue-ssl',
+  'DeployDistribution',
 ] as const;
 
 export type OperationType = (typeof OPERATION_TYPES)[number];

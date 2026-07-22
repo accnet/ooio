@@ -6,6 +6,7 @@ import { Queue } from 'bullmq';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SchedulerService } from '../scheduler/scheduler.service';
+import { EventService } from '../events/events.service';
 import {
   JobResultInput,
   OperationLogEntry,
@@ -38,6 +39,7 @@ export class WorkflowService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly scheduler: SchedulerService,
+    private readonly events: EventService,
     config: ConfigService,
     @InjectQueue(WORKFLOW_QUEUE) private readonly queue: Queue<WorkflowQueueData>,
   ) {
@@ -216,32 +218,59 @@ export class WorkflowService {
     result?: unknown,
     error?: string | null,
   ): Promise<Operation> {
-    const operation = await this.requireOperation(operationId);
-    const data: Prisma.OperationUpdateInput = {
-      status,
-      logs: [...this.logs(operation), { ...log, at: new Date().toISOString(), status }] as Prisma.InputJsonValue,
-    };
-    if (typeof log.progress === 'number') {
-      data.progress = Math.min(100, Math.max(0, Math.floor(log.progress)));
-    }
-    if (result !== undefined) {
-      data.result = result as Prisma.InputJsonValue;
-    }
-    if (error !== undefined) {
-      data.error = error;
-    }
-    const updated = await this.prisma.operation.update({ where: { id: operationId }, data });
-    if (operation.status !== status) {
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const client = tx as Prisma.TransactionClient & {
+        operation: {
+          findUnique(args: { where: { id: string } }): Promise<Operation | null>;
+          update(args: { where: { id: string }; data: Prisma.OperationUpdateInput }): Promise<Operation>;
+        };
+      };
+      const operation = await client.operation.findUnique({ where: { id: operationId } });
+      if (!operation) {
+        throw new NotFoundException('operation not found');
+      }
+      const data: Prisma.OperationUpdateInput = {
+        status,
+        logs: [...this.logs(operation), { ...log, at: new Date().toISOString(), status }] as Prisma.InputJsonValue,
+      };
+      if (typeof log.progress === 'number') {
+        data.progress = Math.min(100, Math.max(0, Math.floor(log.progress)));
+      }
+      if (result !== undefined) {
+        data.result = result as Prisma.InputJsonValue;
+      }
+      if (error !== undefined) {
+        data.error = error;
+      }
+      const changed = await client.operation.update({ where: { id: operationId }, data });
+      if (operation.status !== status && (status === 'succeeded' || status === 'failed')) {
+        await this.events.record(tx, {
+          type: status === 'succeeded' ? 'OperationCompleted' : 'OperationFailed',
+          aggregateType: 'operation',
+          aggregateId: operation.id,
+          payload: {
+            operationId: operation.id,
+            organizationId: operation.organizationId,
+            operationType: operation.type,
+            status,
+            result: result === undefined ? null : result as Prisma.InputJsonValue,
+            error: error || null,
+          },
+        });
+      }
+      return { changed, previous: operation };
+    });
+    if (updated.previous.status !== status) {
       await this.audit.recordOperationStatus({
-        organizationId: operation.organizationId,
+        organizationId: updated.changed.organizationId,
         operationId,
-        from: operation.status,
+        from: updated.previous.status,
         to: status,
         actor,
-        metadata: { type: operation.type },
+        metadata: { type: updated.changed.type },
       });
     }
-    return updated;
+    return updated.changed;
   }
 
   private async appendLog(operation: Operation, entry: OperationLogEntry): Promise<void> {

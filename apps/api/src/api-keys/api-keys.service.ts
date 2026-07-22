@@ -33,6 +33,21 @@ export class ApiKeysService {
     return { id: apiKey.id, name: apiKey.name, key, createdAt: apiKey.createdAt };
   }
 
+  async list(organizationId: string) {
+    return this.prisma.apiKey.findMany({
+      where: { organizationId },
+      select: {
+        id: true,
+        name: true,
+        scopes: true,
+        lastUsedAt: true,
+        expiresAt: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
   async revoke(organizationId: string, keyId: string) {
     const key = await this.prisma.apiKey.findFirst({ where: { id: keyId, organizationId } });
     if (!key) {

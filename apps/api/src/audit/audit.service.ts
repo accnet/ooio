@@ -6,6 +6,26 @@ import { PrismaService } from '../prisma/prisma.service';
 export class AuditService {
   constructor(private readonly prisma: PrismaService) {}
 
+  async recordAdminAccess(input: {
+    organizationId: string;
+    userId?: string;
+    action: string;
+    resourceType: string;
+    resourceId?: string;
+    metadata?: Record<string, unknown>;
+  }): Promise<void> {
+    await this.prisma.auditLog.create({
+      data: {
+        organizationId: input.organizationId,
+        userId: input.userId,
+        action: input.action,
+        resourceType: input.resourceType,
+        resourceId: input.resourceId,
+        metadata: (input.metadata || {}) as Prisma.InputJsonValue,
+      },
+    });
+  }
+
   async recordOperationStatus(input: {
     organizationId: string;
     operationId: string;

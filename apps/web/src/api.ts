@@ -26,10 +26,28 @@ export interface Store {
   id: string;
   externalId?: string;
   status: string;
-  clusterId?: string | null;
-  nodeId?: string | null;
+  tier?: string;
+  title?: string | null;
+  path?: string | null;
+  distribution?: string | null;
+  runtimeVer?: string | null;
   createdAt?: string;
-  domains?: Array<{ domain: string }>;
+  updatedAt?: string;
+  domains?: StoreDomain[];
+}
+
+export interface StoreDomain {
+  hostname: string;
+  verified: boolean;
+  tlsStatus: string;
+}
+
+export interface StoreOperationsResponse {
+  operations: Operation[];
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
 }
 
 export interface CreateStoreInput {
@@ -44,6 +62,8 @@ export interface CreateStoreResponse {
   operationId: string;
   status: string;
 }
+
+export type StoreActionType = 'backup-store' | 'issue-ssl' | 'delete-store';
 
 export interface Operation {
   id: string;
@@ -75,12 +95,55 @@ export interface Subscription {
   plan: Plan;
 }
 
-export interface Cluster {
+export interface AnalyticsGrowthPoint {
+  date: string;
+  created: number;
+}
+
+export interface OperationAnalytics {
+  total: number;
+  succeeded: number;
+  failed: number;
+  successRate: number;
+  failureRate: number;
+}
+
+export interface AnalyticsOverview {
+  stores: Record<string, number>;
+  operations: OperationAnalytics;
+  growth: AnalyticsGrowthPoint[];
+}
+
+export interface Organization {
   id: string;
   name: string;
-  region?: string;
+  slug: string;
   status?: string;
-  nodes?: Array<{ id: string; hostname?: string; status?: string; capacity?: Record<string, unknown> }>;
+  role?: string;
+  createdAt?: string;
+}
+
+export interface ApiKey {
+  id: string;
+  name: string;
+  scopes?: unknown;
+  lastUsedAt?: string | null;
+  expiresAt?: string | null;
+  createdAt?: string;
+}
+
+export interface CreatedApiKey {
+  id: string;
+  name: string;
+  key: string;
+  createdAt?: string;
+}
+
+export interface StoreAnalytics {
+  from: string;
+  to: string;
+  totals: Record<string, number>;
+  growth: AnalyticsGrowthPoint[];
 }
 
 function getToken(): string | null {
@@ -101,18 +164,28 @@ export function hasToken(): boolean {
   return Boolean(getToken());
 }
 
-export function organizationIdFromToken(): string | null {
+function claimFromToken<T>(claim: string): T | null {
   const token = getToken();
   if (!token) return null;
 
   try {
     const payload = token.split('.')[1];
     const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
-    const decoded = JSON.parse(window.atob(normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '='))) as { organizationId?: string };
-    return decoded.organizationId ?? null;
+    const decoded = JSON.parse(
+      window.atob(normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=')),
+    ) as Record<string, unknown>;
+    return (decoded[claim] as T) ?? null;
   } catch {
     return null;
   }
+}
+
+export function organizationIdFromToken(): string | null {
+  return claimFromToken<string>('organizationId');
+}
+
+export function emailFromToken(): string | null {
+  return claimFromToken<string>('email');
 }
 
 function errorMessage(body: unknown, fallback: string): string {
@@ -151,14 +224,71 @@ export function login(email: string, password: string): Promise<AuthTokens> {
   });
 }
 
+export interface RegisterInput {
+  email: string;
+  password: string;
+  name?: string;
+  organizationName?: string;
+}
+
+// The API signs the account in as part of registering, so this returns tokens
+// rather than requiring a second round trip through /auth/login.
+export function register(input: RegisterInput): Promise<AuthTokens> {
+  return request<AuthTokens>('/auth/register', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
 export function getStores(): Promise<Store[]> {
   return request<Store[]>('/stores');
+}
+
+export function getOrganizations(): Promise<Organization[]> {
+  return request<Organization[]>('/orgs');
+}
+
+export function getApiKeys(organizationId: string): Promise<ApiKey[]> {
+  return request<ApiKey[]>(`/orgs/${encodeURIComponent(organizationId)}/api-keys`);
+}
+
+export function createApiKey(organizationId: string, name: string): Promise<CreatedApiKey> {
+  return request<CreatedApiKey>(`/orgs/${encodeURIComponent(organizationId)}/api-keys`, {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function revokeApiKey(organizationId: string, keyId: string): Promise<{ id: string; revoked: boolean }> {
+  return request<{ id: string; revoked: boolean }>(
+    `/orgs/${encodeURIComponent(organizationId)}/api-keys/${encodeURIComponent(keyId)}`,
+    { method: 'DELETE' },
+  );
+}
+
+export function getStore(id: string): Promise<Store> {
+  return request<Store>(`/stores/${encodeURIComponent(id)}`);
+}
+
+export function getStoreOperations(id: string): Promise<StoreOperationsResponse> {
+  return request<StoreOperationsResponse>(`/stores/${encodeURIComponent(id)}/operations`);
 }
 
 export function createStore(input: CreateStoreInput): Promise<CreateStoreResponse> {
   return request<CreateStoreResponse>('/stores', {
     method: 'POST',
     body: JSON.stringify(input),
+  });
+}
+
+export function createStoreOperation(
+  storeId: string,
+  type: StoreActionType,
+  payload?: Record<string, unknown>,
+): Promise<Operation> {
+  return request<Operation>(`/stores/${encodeURIComponent(storeId)}/operations`, {
+    method: 'POST',
+    body: JSON.stringify({ type, payload }),
   });
 }
 
@@ -181,12 +311,18 @@ export function changeSubscription(organizationId: string, planId: string): Prom
   });
 }
 
-export async function getClusters(): Promise<Cluster[] | null> {
-  try {
-    const data = await request<Cluster[] | { clusters?: Cluster[] }>('/clusters');
-    return Array.isArray(data) ? data : data.clusters ?? [];
-  } catch (error) {
-    if (error instanceof ApiError && error.status === 404) return null;
-    throw error;
-  }
+export function getSubscription(organizationId: string): Promise<Subscription | null> {
+  return request<Subscription | null>(`/orgs/${encodeURIComponent(organizationId)}/subscription`);
+}
+
+export function getAnalyticsOverview(): Promise<AnalyticsOverview> {
+  return request<AnalyticsOverview>('/analytics/overview');
+}
+
+export function getStoreAnalytics(from: string, to: string): Promise<StoreAnalytics> {
+  const params = new URLSearchParams({
+    from: `${from}T00:00:00.000Z`,
+    to: `${to}T23:59:59.999Z`,
+  });
+  return request<StoreAnalytics>(`/analytics/stores?${params.toString()}`);
 }

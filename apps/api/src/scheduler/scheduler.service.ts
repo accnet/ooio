@@ -1,5 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Prisma } from '@prisma/client';
 import { DatabaseAllocationService } from '../das/das.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { loadPlacementConfig, PlacementConfig } from './placement.config';
@@ -29,11 +30,15 @@ export class SchedulerService {
   }
 
   async placeStore(): Promise<Placement> {
+    const heartbeatCutoff = new Date(Date.now() - this.placementConfig.heartbeatMaxAgeSeconds * 1000);
     const clusters = await this.prisma.cluster.findMany({
       where: { status: 'active' },
       include: {
         nodes: {
-          where: { status: { in: ['ready', 'active'] } },
+          where: {
+            status: { in: ['ready', 'active'] },
+            lastHeartbeatAt: { gte: heartbeatCutoff },
+          },
           include: {
             stores: { where: { status: { not: 'deleted' } }, select: { id: true } },
           },
@@ -43,12 +48,7 @@ export class SchedulerService {
     });
 
     if (!clusters.length) {
-      const cluster = await this.prisma.cluster.upsert({
-        where: { name: 'default' },
-        create: { name: 'default', region: 'default' },
-        update: {},
-      });
-      return { clusterId: cluster.id, nodeId: null };
+      throw new ConflictException('no node with a recent heartbeat is available');
     }
     const candidates = clusters.flatMap((cluster) => cluster.nodes.map((node) => ({
         cluster,
@@ -56,7 +56,9 @@ export class SchedulerService {
         capacity: this.capacity(node.capacity),
         storeCount: node.stores.length,
       })))
-      .filter(({ capacity, storeCount }) =>
+      .filter(({ node, capacity, storeCount }) =>
+        node.lastHeartbeatAt !== null &&
+        node.lastHeartbeatAt.getTime() >= heartbeatCutoff.getTime() &&
         storeCount < this.placementConfig.maxStoresPerNode &&
         capacity.cpuPercent <= this.placementConfig.maxCpuPercent &&
         capacity.memoryPercent <= this.placementConfig.maxMemoryPercent,
@@ -67,15 +69,17 @@ export class SchedulerService {
       });
 
     const selected = candidates[0];
-    const cluster = selected?.cluster ?? clusters[0];
+    if (!selected) {
+      throw new ConflictException('no node with a recent heartbeat is available');
+    }
     return {
-      clusterId: cluster.id,
-      nodeId: selected?.node.id ?? null,
+      clusterId: selected.cluster.id,
+      nodeId: selected.node.id,
     };
   }
 
-  allocateDatabase(storeId: string, clusterId: string) {
-    return this.das.allocate({ storeId, clusterId });
+  allocateDatabase(storeId: string, clusterId: string, tx?: Prisma.TransactionClient) {
+    return this.das.allocate({ storeId, clusterId }, tx);
   }
 
   async reconcilePending(): Promise<number> {

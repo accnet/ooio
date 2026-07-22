@@ -11,6 +11,7 @@ export interface PlacementConfig {
   maxStoresPerNode: number;
   maxCpuPercent: number;
   maxMemoryPercent: number;
+  heartbeatMaxAgeSeconds: number;
   weights: PlacementWeights;
   reconciliationIntervalMs: number;
 }
@@ -25,6 +26,7 @@ export function loadPlacementConfig(config: ConfigService): PlacementConfig {
     maxStoresPerNode: Math.max(1, numberConfig(config, 'PLACEMENT_MAX_STORES_PER_NODE', 100)),
     maxCpuPercent: Math.min(100, Math.max(1, numberConfig(config, 'PLACEMENT_MAX_CPU_PERCENT', 80))),
     maxMemoryPercent: Math.min(100, Math.max(1, numberConfig(config, 'PLACEMENT_MAX_MEMORY_PERCENT', 90))),
+    heartbeatMaxAgeSeconds: Math.max(1, numberConfig(config, 'PLACEMENT_HEARTBEAT_MAX_AGE_SECONDS', 120)),
     weights: {
       cpu: Math.max(0, numberConfig(config, 'PLACEMENT_WEIGHT_CPU', 0.45)),
       memory: Math.max(0, numberConfig(config, 'PLACEMENT_WEIGHT_MEMORY', 0.3)),

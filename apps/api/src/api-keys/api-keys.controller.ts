@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { IsArray, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RbacGuard, Roles } from '../auth/rbac.guard';
@@ -24,6 +24,11 @@ export class ApiKeysController {
   @Post()
   create(@Param('id') organizationId: string, @Body() body: CreateApiKeyBody) {
     return this.apiKeys.create(organizationId, body);
+  }
+
+  @Get()
+  list(@Param('id') organizationId: string) {
+    return this.apiKeys.list(organizationId);
   }
 
   @Delete(':keyId')

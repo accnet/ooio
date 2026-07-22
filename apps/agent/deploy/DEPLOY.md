@@ -52,6 +52,23 @@ Cài xong sẽ có: MariaDB + WordPress multisite (subdirectory) + MU Plugin (se
 + Redis object cache + HyperDB (drop-in + db-config.php ở ABSPATH) + WooCommerce + Core
 Plugin Set + php-fpm + Caddy (:80) + platform-agent (systemd).
 
+Trong lúc cài, `install-node.sh` tạo cấu hình MariaDB được quản lý tại
+`/etc/mysql/mariadb.conf.d/60-ooio.cnf`, systemd override tại
+`/etc/systemd/system/mariadb.service.d/60-ooio-limits.conf`, và sysctl tại
+`/etc/sysctl.d/60-ooio-mariadb.conf`. `OOIO_EXPECTED_STORES_PER_NODE` mặc định là 200.
+Theo Spike #002, một store WooCommerce có 50 bảng nóng; script dùng công thức
+`table_open_cache = stores * 50 * 1.2`, rồi đặt `open_files_limit` ít nhất gấp đôi.
+Systemd và kernel file-descriptor limits cũng được nâng tương ứng.
+
+Sau khi MariaDB khởi động, script đọc lại `@@table_open_cache` và
+`@@open_files_limit`, rồi dừng với lỗi nếu server tự hạ một trong hai giá trị dưới
+mức yêu cầu. Kiểm tra thủ công sau cài:
+```bash
+sudo mariadb -N -B -e 'SELECT @@table_open_cache, @@open_files_limit;'
+sudo sysctl fs.nr_open fs.file-max
+systemctl show mariadb -p LimitNOFILE --no-pager
+```
+
 ## 5. Kiểm tra node lên đúng
 ```bash
 systemctl status caddy php*-fpm mariadb redis-server platform-agent --no-pager

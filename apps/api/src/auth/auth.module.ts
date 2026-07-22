@@ -6,6 +6,7 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { JwtStrategy } from './jwt.strategy';
+import { PlatformRoleGuard } from './platform-role.guard';
 import { RbacGuard } from './rbac.guard';
 
 @Module({
@@ -21,7 +22,7 @@ import { RbacGuard } from './rbac.guard';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, JwtAuthGuard, RbacGuard],
-  exports: [AuthService, JwtAuthGuard, RbacGuard],
+  providers: [AuthService, JwtStrategy, JwtAuthGuard, PlatformRoleGuard, RbacGuard],
+  exports: [AuthService, JwtAuthGuard, PlatformRoleGuard, RbacGuard],
 })
 export class AuthModule {}

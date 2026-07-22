@@ -1,0 +1,23 @@
+{
+  "name": "ops",
+  "version": "1.0.0",
+  "description": "Infrastructure operations console (nodes, clusters, pools, distributions, health). Separate app so it can be bound to an internal network and never exposed publicly.",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "test": "echo \"No admin test suite configured\""
+  },
+  "dependencies": {
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-router-dom": "^7.18.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.1.5"
+  }
+}

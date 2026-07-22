@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { IsEmail, IsIn, IsNotEmpty, IsObject, IsOptional, IsString } from 'class-validator';
 import { AuthenticatedRequest } from '../auth/auth.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -45,6 +45,21 @@ export class StoresController {
   @Get()
   list(@Req() request: AuthenticatedRequest) {
     return this.stores.list(request.user.organizationId);
+  }
+
+  @Get(':id')
+  get(@Param('id') storeId: string, @Req() request: AuthenticatedRequest) {
+    return this.stores.get(storeId, request.user.organizationId);
+  }
+
+  @Get(':id/operations')
+  listOperations(
+    @Param('id') storeId: string,
+    @Query('page') page: string | undefined,
+    @Query('limit') limit: string | undefined,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.stores.listOperations(storeId, request.user.organizationId, page, limit);
   }
 
   @Post(':id/operations')

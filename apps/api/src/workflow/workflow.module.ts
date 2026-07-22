@@ -3,6 +3,7 @@ import { BullModule } from '@nestjs/bullmq';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuditModule } from '../audit/audit.module';
 import { SchedulerModule } from '../scheduler/scheduler.module';
+import { EventsModule } from '../events/events.module';
 import { OperationsProcessor } from './operations.processor';
 import { WORKFLOW_QUEUE, WorkflowService } from './workflow.service';
 
@@ -11,6 +12,7 @@ import { WORKFLOW_QUEUE, WorkflowService } from './workflow.service';
     ConfigModule,
     AuditModule,
     SchedulerModule,
+    EventsModule,
     BullModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

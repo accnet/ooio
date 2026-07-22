@@ -13,6 +13,13 @@ import { BillingModule } from './billing/billing.module';
 import { SchedulerModule } from './scheduler/scheduler.module';
 import { WorkflowModule } from './workflow/workflow.module';
 import { DasModule } from './das/das.module';
+import { EventsModule } from './events/events.module';
+import { MarketplaceModule } from './marketplace/marketplace.module';
+import { FlagsModule } from './flags/flags.module';
+import { AnalyticsModule } from './analytics/analytics.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { MigrationsModule } from './migrations/migrations.module';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
   imports: [
@@ -33,6 +40,13 @@ import { DasModule } from './das/das.module';
     SchedulerModule,
     WorkflowModule,
     DasModule,
+    EventsModule,
+    MarketplaceModule,
+    FlagsModule,
+    AnalyticsModule,
+    NotificationsModule,
+    MigrationsModule,
+    AdminModule,
     HealthModule,
   ],
 })

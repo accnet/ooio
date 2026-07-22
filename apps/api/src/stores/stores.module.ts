@@ -4,9 +4,10 @@ import { SchedulerModule } from '../scheduler/scheduler.module';
 import { WorkflowModule } from '../workflow/workflow.module';
 import { StoresController } from './stores.controller';
 import { StoresService } from './stores.service';
+import { EventsModule } from '../events/events.module';
 
 @Module({
-  imports: [AuthModule, SchedulerModule, WorkflowModule],
+  imports: [AuthModule, SchedulerModule, WorkflowModule, EventsModule],
   controllers: [StoresController],
   providers: [StoresService],
   exports: [StoresService],

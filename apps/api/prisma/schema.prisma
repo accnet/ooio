@@ -23,6 +23,7 @@ model Organization {
   stores        Store[]
   operations    Operation[]
   auditLogs     AuditLog[]
+  notificationChannels NotificationChannel[]
 
   @@index([planId, status])
   @@map("organizations")
@@ -33,6 +34,7 @@ model User {
   email       String       @unique
   name        String?
   passwordHash String?      @map("password_hash")
+  platformRoles String[]     @default([]) @map("platform_roles")
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
   memberships Membership[]
@@ -173,6 +175,8 @@ model DbPool {
   stores       Store[]
   placementHistoryFrom StorePlacementHistory[] @relation("PlacementFromPool")
   placementHistoryTo   StorePlacementHistory[] @relation("PlacementToPool")
+  migrationsFrom StoreMigration[] @relation("MigrationFromPool")
+  migrationsTo   StoreMigration[] @relation("MigrationToPool")
 
   @@unique([clusterId, name])
   @@map("db_pools")
@@ -186,6 +190,8 @@ model Store {
   dbPoolId       String?       @map("db_pool_id")
   dataset        String?
   externalId     String        @unique @map("external_id")
+  title          String?
+  path           String?
   distribution   String?
   runtimeVer     String?       @map("runtime_ver")
   tier           String        @default("standard")
@@ -200,6 +206,7 @@ model Store {
   domains        Domain[]
   operations     Operation[]
   placementHistory StorePlacementHistory[]
+  migrations     StoreMigration[]
 
   @@index([organizationId, status])
   @@index([clusterId, status])
@@ -272,6 +279,28 @@ model MappingEpoch {
   @@map("mapping_epochs")
 }
 
+model StoreMigration {
+  id          String    @id @default(cuid())
+  storeId     String    @map("store_id")
+  fromPoolId  String    @map("from_pool_id")
+  toPoolId    String    @map("to_pool_id")
+  state       String    @default("planned")
+  epoch       Int?
+  ackedNodes  Json      @default("[]") @map("acked_nodes")
+  reason      String
+  lastError   String?   @map("last_error")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  completedAt DateTime? @map("completed_at")
+  store       Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  fromPool    DbPool    @relation("MigrationFromPool", fields: [fromPoolId], references: [id], onDelete: Restrict)
+  toPool      DbPool    @relation("MigrationToPool", fields: [toPoolId], references: [id], onDelete: Restrict)
+
+  @@index([storeId, createdAt])
+  @@index([state, updatedAt])
+  @@map("store_migrations")
+}
+
 model AuditLog {
   id             String        @id @default(cuid())
   organizationId String        @map("organization_id")
@@ -288,4 +317,81 @@ model AuditLog {
   @@index([organizationId, createdAt])
   @@index([resourceType, resourceId])
   @@map("audit_log")
+}
+
+model Event {
+  id            String    @id @default(cuid())
+  type          String
+  aggregateType String
+  aggregateId   String
+  payload       Json
+  occurredAt     DateTime  @default(now())
+  publishedAt    DateTime?
+  deliveryStatus String    @default("pending") @map("delivery_status")
+  attempts       Int       @default(0)
+  lastError     String?
+  notifications Notification[]
+
+  @@index([publishedAt, occurredAt])
+  @@map("events")
+}
+
+model Distribution {
+  id         String   @id @default(cuid())
+  name       String
+  version    String
+  channel    String   @default("stable")
+  artifactUrl String  @map("artifact_url")
+  checksum   String
+  status     String   @default("draft")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([name, version])
+  @@index([name, channel, status])
+  @@map("distributions")
+}
+
+model FeatureFlag {
+  key         String   @id
+  description String?
+  enabled     Boolean  @default(false)
+  rules       Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("feature_flags")
+}
+
+model NotificationChannel {
+  id             String         @id @default(cuid())
+  organizationId String         @map("organization_id")
+  type           String
+  target         String
+  enabled        Boolean        @default(true)
+  secret         String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  notifications   Notification[]
+
+  @@index([organizationId, enabled])
+  @@map("notification_channels")
+}
+
+model Notification {
+  id         String              @id @default(cuid())
+  eventId    String              @map("event_id")
+  channelId  String              @map("channel_id")
+  status     String              @default("pending")
+  attempts   Int                 @default(0)
+  lastError  String?             @map("last_error")
+  createdAt  DateTime            @default(now())
+  sentAt     DateTime?           @map("sent_at")
+  event      Event               @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  channel    NotificationChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, channelId])
+  @@index([channelId, status, createdAt])
+  @@map("notifications")
 }

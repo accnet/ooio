@@ -79,6 +79,7 @@ MU_PLUGIN_TARGET="${MU_PLUGIN_TARGET:-$WP_PATH/wp-content/mu-plugins/platform-co
 MARIADB_HOST="${MARIADB_HOST:-127.0.0.1}"; MARIADB_PORT="${MARIADB_PORT:-3306}"
 MARIADB_DATABASE="${MARIADB_DATABASE:-wordpress}"; MARIADB_USER="${MARIADB_USER:-wordpress}"
 MARIADB_PASSWORD="${MARIADB_PASSWORD:-change-me-in-development}"; MARIADB_ROOT_PASSWORD="${MARIADB_ROOT_PASSWORD:-}"
+OOIO_EXPECTED_STORES_PER_NODE="${OOIO_EXPECTED_STORES_PER_NODE:-200}"
 REDIS_HOST="${REDIS_HOST:-127.0.0.1}"; REDIS_PORT="${REDIS_PORT:-6379}"
 REDIS_SERVICE="${REDIS_SERVICE:-redis-server}"; REDIS_PACKAGE="${REDIS_PACKAGE:-redis-server}"
 LUDICROUSDB_ENABLED="${LUDICROUSDB_ENABLED:-${HYPERDB_ENABLED:-true}}"
@@ -97,6 +98,10 @@ AGENT_BINARY="${AGENT_BINARY:-$script_dir/../platform-agent}"
 AGENT_SERVICE_NAME="${AGENT_SERVICE_NAME:-platform-agent}"
 AGENT_SERVICE_USER="${AGENT_SERVICE_USER:-platform-agent}"; AGENT_SERVICE_GROUP="${AGENT_SERVICE_GROUP:-platform-agent}"
 PLATFORM_CORE_SHARED_SECRET="${PLATFORM_CORE_SHARED_SECRET:-}"
+MARIADB_CONFIG_FILE="${MARIADB_CONFIG_FILE:-$etc_root/mysql/mariadb.conf.d/60-ooio.cnf}"
+MARIADB_SYSTEMD_DROPIN="${MARIADB_SYSTEMD_DROPIN:-$etc_root/systemd/system/mariadb.service.d/60-ooio-limits.conf}"
+OOIO_SYSCTL_FILE="${OOIO_SYSCTL_FILE:-$etc_root/sysctl.d/60-ooio-mariadb.conf}"
+OOIO_MARIADB_LIMITS_CHANGED=0
 
 plan() { ((dry_run)) && printf '[dry-run] %s\n' "$*" || :; }
 run() { ((dry_run)) || "$@"; }
@@ -107,6 +112,7 @@ validate_settings() {
   [[ "$MARIADB_USER" =~ ^[A-Za-z0-9_]+$ ]] || die 'MARIADB_USER has invalid characters'
   [[ "$MARIADB_PORT" =~ ^[0-9]+$ ]] || die 'MARIADB_PORT must be numeric'
   [[ "$REDIS_PORT" =~ ^[0-9]+$ ]] || die 'REDIS_PORT must be numeric'
+  [[ "$OOIO_EXPECTED_STORES_PER_NODE" =~ ^[1-9][0-9]*$ ]] || die 'OOIO_EXPECTED_STORES_PER_NODE must be a positive integer'
   if (( !dry_run )); then
     [[ -n "$PLATFORM_CORE_SHARED_SECRET" ]] || die 'PLATFORM_CORE_SHARED_SECRET is required outside dry-run'
     [[ "$PLATFORM_CORE_SHARED_SECRET" != change-me-* ]] || die 'replace the development shared secret before installing'
@@ -115,10 +121,22 @@ validate_settings() {
 
 ensure_dir() { if ((dry_run)); then plan "create directory $1"; else install -d -m "${2:-0755}" "$1"; fi; }
 
+write_managed_file() {
+  local target="$1" mode="$2" temp_file
+  temp_file="$(mktemp "${target}.tmp.XXXXXX")"
+  cat > "$temp_file"
+  chmod "$mode" "$temp_file"
+  if [[ ! -e "$target" ]] || ! cmp -s "$temp_file" "$target"; then
+    install -m "$mode" "$temp_file" "$target"
+    OOIO_MARIADB_LIMITS_CHANGED=1
+  fi
+  rm -f -- "$temp_file"
+}
+
 ensure_dependencies() {
-  local packages=(mariadb-server mariadb-client php php-cli php-curl php-mbstring php-mysql php-xml php-fpm caddy curl ca-certificates unzip python3 "$REDIS_PACKAGE")
+  local packages=(mariadb-server mariadb-client php php-cli php-curl php-mbstring php-mysql php-xml php-fpm caddy curl ca-certificates unzip python3 procps "$REDIS_PACKAGE")
   local missing=() name
-  for name in curl unzip php python3 redis-server; do command_available "$name" || missing+=("$name"); done
+  for name in curl unzip php python3 redis-server sysctl; do command_available "$name" || missing+=("$name"); done
   command_available mariadb || command_available mysql || missing+=(mariadb)
   command_available caddy || missing+=(caddy)
   ((${#missing[@]} == 0)) && { plan 'required runtime commands are available'; return; }
@@ -152,7 +170,108 @@ ensure_redis() {
   fi
 }
 
+calculate_mariadb_limits() {
+  # Spike #002 measured 50 hot tables per WooCommerce store. Keep the 1.2x
+  # safety factor explicit: table_open_cache = stores * 50 * 1.2.
+  OOIO_TABLES_PER_STORE=50
+  OOIO_TABLE_OPEN_CACHE=$((OOIO_EXPECTED_STORES_PER_NODE * OOIO_TABLES_PER_STORE * 12 / 10))
+  OOIO_OPEN_FILES_LIMIT=$((OOIO_TABLE_OPEN_CACHE * 2))
+  # Leave process-level headroom for MariaDB's own descriptors and connections.
+  OOIO_MARIADB_LIMIT_NOFILE=$((OOIO_OPEN_FILES_LIMIT * 2))
+  OOIO_SYSCTL_NR_OPEN="$OOIO_MARIADB_LIMIT_NOFILE"
+  OOIO_SYSCTL_FILE_MAX="$OOIO_MARIADB_LIMIT_NOFILE"
+}
+
+write_mariadb_limits() {
+  calculate_mariadb_limits
+  ensure_dir "$(dirname -- "$MARIADB_CONFIG_FILE")" 0755
+  ensure_dir "$(dirname -- "$MARIADB_SYSTEMD_DROPIN")" 0755
+  ensure_dir "$(dirname -- "$OOIO_SYSCTL_FILE")" 0755
+  if (( !dry_run )) && [[ "$mode" == system ]]; then
+    local current_nr_open current_file_max
+    current_nr_open="$(sysctl -n fs.nr_open)" || die 'could not read fs.nr_open before applying MariaDB limits'
+    current_file_max="$(sysctl -n fs.file-max)" || die 'could not read fs.file-max before applying MariaDB limits'
+    [[ "$current_nr_open" =~ ^[0-9]+$ && "$current_file_max" =~ ^[0-9]+$ ]] || die "kernel fd limits are not numeric (nr_open=$current_nr_open file-max=$current_file_max)"
+    (( current_nr_open > OOIO_SYSCTL_NR_OPEN )) && OOIO_SYSCTL_NR_OPEN="$current_nr_open"
+    (( current_file_max > OOIO_SYSCTL_FILE_MAX )) && OOIO_SYSCTL_FILE_MAX="$current_file_max"
+  fi
+  if ((dry_run)); then
+    plan "write MariaDB limits to $MARIADB_CONFIG_FILE (table_open_cache=$OOIO_TABLE_OPEN_CACHE, open_files_limit=$OOIO_OPEN_FILES_LIMIT)"
+    plan "write MariaDB systemd LimitNOFILE=$OOIO_MARIADB_LIMIT_NOFILE to $MARIADB_SYSTEMD_DROPIN"
+    plan "write kernel fd limits (fs.nr_open/fs.file-max) to $OOIO_SYSCTL_FILE"
+    return
+  fi
+  write_managed_file "$MARIADB_CONFIG_FILE" 0644 <<EOF
+# Managed by ooio install-node.sh. See Spike #002 table-cache report.
+# Formula: OOIO_EXPECTED_STORES_PER_NODE * 50 hot tables/store * 1.2 safety factor.
+[mysqld]
+table_open_cache=$OOIO_TABLE_OPEN_CACHE
+open_files_limit=$OOIO_OPEN_FILES_LIMIT
+EOF
+  write_managed_file "$MARIADB_SYSTEMD_DROPIN" 0644 <<EOF
+# Managed by ooio install-node.sh. Keep the process limit above MariaDB's table cache.
+[Service]
+LimitNOFILE=$OOIO_MARIADB_LIMIT_NOFILE
+EOF
+  write_managed_file "$OOIO_SYSCTL_FILE" 0644 <<EOF
+# Managed by ooio install-node.sh. Required for MariaDB table/file descriptor capacity.
+fs.nr_open = $OOIO_SYSCTL_NR_OPEN
+fs.file-max = $OOIO_SYSCTL_FILE_MAX
+EOF
+}
+
+apply_kernel_limits() {
+  if ((dry_run)); then
+    if [[ "$mode" == system ]]; then
+      plan "apply kernel fd limits from $OOIO_SYSCTL_FILE"
+    else
+      plan "prefix mode writes kernel fd limits to $OOIO_SYSCTL_FILE but cannot change the host kernel"
+    fi
+  elif [[ "$mode" == system ]]; then
+    command_available sysctl || die 'sysctl is required to apply MariaDB fd limits'
+    sysctl -p "$OOIO_SYSCTL_FILE" >/dev/null
+  else
+    plan "prefix mode cannot change host kernel limits; verify fs.nr_open and fs.file-max before starting MariaDB"
+  fi
+}
+
+verify_kernel_limits() {
+  if ((dry_run)); then
+    plan "verify fs.nr_open and fs.file-max >= $OOIO_MARIADB_LIMIT_NOFILE"
+    return
+  fi
+  local nr_open file_max
+  nr_open="$(sysctl -n fs.nr_open)" || die 'could not read fs.nr_open after applying MariaDB limits'
+  file_max="$(sysctl -n fs.file-max)" || die 'could not read fs.file-max after applying MariaDB limits'
+  [[ "$nr_open" =~ ^[0-9]+$ && "$file_max" =~ ^[0-9]+$ ]] || die "kernel fd limits are not numeric (nr_open=$nr_open file-max=$file_max)"
+  (( nr_open >= OOIO_MARIADB_LIMIT_NOFILE )) || die "fs.nr_open=$nr_open is below required $OOIO_MARIADB_LIMIT_NOFILE"
+  (( file_max >= OOIO_MARIADB_LIMIT_NOFILE )) || die "fs.file-max=$file_max is below required $OOIO_MARIADB_LIMIT_NOFILE"
+}
+
+verify_mariadb_limits() {
+  if ((dry_run)); then
+    plan "verify MariaDB @@table_open_cache >= $OOIO_TABLE_OPEN_CACHE and @@open_files_limit >= $OOIO_OPEN_FILES_LIMIT"
+    return
+  fi
+  local db_client=mariadb actual_table_cache actual_open_files
+  command_available "$db_client" || db_client=mysql
+  local -a args=(--protocol=socket --socket="$MARIADB_SOCKET" -uroot -N -B -e 'SELECT @@table_open_cache, @@open_files_limit;')
+  local limits
+  if [[ -n "$MARIADB_ROOT_PASSWORD" ]]; then
+    limits="$(MYSQL_PWD="$MARIADB_ROOT_PASSWORD" "$db_client" "${args[@]}")" || die 'could not read MariaDB runtime limits'
+  else
+    limits="$($db_client "${args[@]}")" || die 'could not read MariaDB runtime limits'
+  fi
+  read -r actual_table_cache actual_open_files <<< "$limits"
+  [[ "$actual_table_cache" =~ ^[0-9]+$ && "$actual_open_files" =~ ^[0-9]+$ ]] || die "MariaDB returned invalid runtime limits: $limits"
+  (( actual_table_cache >= OOIO_TABLE_OPEN_CACHE )) || die "MariaDB lowered table_open_cache to $actual_table_cache; required $OOIO_TABLE_OPEN_CACHE"
+  (( actual_open_files >= OOIO_OPEN_FILES_LIMIT )) || die "MariaDB lowered open_files_limit to $actual_open_files; required $OOIO_OPEN_FILES_LIMIT"
+  plan "MariaDB limits verified (table_open_cache=$actual_table_cache, open_files_limit=$actual_open_files)"
+}
+
 ensure_mariadb() {
+  write_mariadb_limits
+  apply_kernel_limits
   local init_command=''
   command_available mariadb-install-db && init_command=mariadb-install-db
   [[ -n "$init_command" ]] || { command_available mysql_install_db && init_command=mysql_install_db || :; }
@@ -163,13 +282,24 @@ ensure_mariadb() {
     plan "skip MariaDB datadir initialization: $MARIADB_DATA_DIR/mysql exists"
   fi
   if [[ "$mode" == system ]]; then
-    if ((dry_run)); then plan 'enable and start MariaDB with systemd'; else systemctl enable --now mariadb; fi
+    if ((dry_run)); then
+      plan 'reload systemd and enable/start MariaDB with the managed fd limit'
+    else
+      systemctl daemon-reload
+      if systemctl is-active --quiet mariadb; then
+        if (( OOIO_MARIADB_LIMITS_CHANGED )); then systemctl restart mariadb; else plan 'MariaDB is already running with the managed limits'; fi
+      else
+        systemctl enable --now mariadb
+      fi
+    fi
   elif [[ ! -S "$MARIADB_SOCKET" ]]; then
     if ((dry_run)); then plan "start local MariaDB on socket $MARIADB_SOCKET"; else
       command_available mariadbd || die 'mariadbd is required in prefix mode'
-      mariadbd --datadir="$MARIADB_DATA_DIR" --socket="$MARIADB_SOCKET" --pid-file="$MARIADB_DATA_DIR/mariadb.pid" --port="$MARIADB_PORT" --bind-address=127.0.0.1 --daemonize
+      mariadbd --defaults-extra-file="$MARIADB_CONFIG_FILE" --datadir="$MARIADB_DATA_DIR" --socket="$MARIADB_SOCKET" --pid-file="$MARIADB_DATA_DIR/mariadb.pid" --port="$MARIADB_PORT" --bind-address=127.0.0.1 --daemonize
     fi
   fi
+  verify_kernel_limits
+  verify_mariadb_limits
   if ((dry_run)); then plan "create MariaDB database $MARIADB_DATABASE and user $MARIADB_USER"; return; fi
   local db_client=mariadb; command_available "$db_client" || db_client=mysql
   local escaped_password="${MARIADB_PASSWORD//\'/\'\'}"

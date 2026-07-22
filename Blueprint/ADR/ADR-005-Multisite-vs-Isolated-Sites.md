@@ -24,9 +24,31 @@ global đó — đúng thứ làm hỏng tính tự chứa (xem `ADR-006` §9: g
 hot path).
 
 **Vì vậy ADR-005 KHÔNG được chốt độc lập.** Khi chạy Gate 1 spike:
-- Phải đo **database-per-store ở quy mô** (thời gian `CREATE DATABASE`, ~10.000 database ×
-  ~12 bảng ≈ 120k bảng: `innodb_file_per_table`, `table_open_cache`, `open_files_limit`),
-  **không chỉ** đo subsite prefix `wp_N_*` như harness A1 hiện tại.
+- Phải đo **database-per-store ở quy mô** (thời gian `CREATE DATABASE`;
+  `innodb_file_per_table`, `table_open_cache`, `open_files_limit`), **không chỉ** đo subsite
+  prefix `wp_N_*` như harness A1 hiện tại. **Số liệu nền đã đo thật 2026-07-21: 48 bảng và
+  5.0 MB cho MỘT store WooCommerce rỗng** ⇒ 10.000 store = **480.000 bảng, ~50 GB** (ước
+  lượng cũ "~12 bảng ≈ 120k bảng" chỉ đếm WordPress core, thiếu 4 lần — xem `ADR-006`,
+  mục "Cơ sở quy mô").
+- **ĐÃ ĐO — Spike Report #002 (2026-07-22)**: bức tường `table_open_cache` là **có thật và
+  dự đoán được chính xác**:
+
+  ```
+  Số store tối đa ≈ table_open_cache ÷ số bảng nóng mỗi store
+  ```
+
+  Đo thật: với `table_open_cache=2000` mặc định, 105 store vừa khít (`Open_tables=1998`),
+  **120 store bắt đầu thrash** (`Opened_tables` tăng 2.280 mỗi lượt, mãi mãi). Một store
+  WooCommerce có **50 bảng**, nên nếu toàn bộ bảng đều nóng thì trần là **~40 store**.
+
+  **Mật độ ~200 store/cluster cho Basic đề xuất ở mục NFR bên dưới nằm TRÊN bức tường này**
+  ở mọi kịch bản đo được. Nhưng đây **không phải lý do loại Multisite hay loại
+  database-per-store** — nó là **yêu cầu cấu hình Runtime**: 200 store × 50 bảng đòi
+  `table_open_cache ≥ 10.000` và `open_files_limit` tương ứng. Vì vậy hai tham số này phải
+  được **suy ra từ mật độ store dự kiến**, không được để mặc định. Xem
+  `scripts/spike/REPORT-002-table-cache.md`.
+
+  Còn thiếu (cần VPS): đo với kết nối **đồng thời**, phần cứng thật, và dữ liệu thật.
 - Kết quả spike phải được đọc **cùng với** `ADR-006`: nếu database-per-store chạy tốt,
   cán cân nghiêng về **Isolated Single-sites** hơn trước.
 

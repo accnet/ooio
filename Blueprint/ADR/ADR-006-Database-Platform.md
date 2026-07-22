@@ -54,13 +54,25 @@ implementation KHÔNG ảnh hưởng Control Plane**.
 Mapping `blog_id → pool` tồn tại ở hai nơi (Control Plane là nguồn sự thật; node có bản
 sync). Mapping lệch = **WordPress ghi nhầm database** = mất/nhân đôi đơn hàng **âm thầm**.
 ```json
-{ "epoch": 82, "generatedAt": "2026-07-21T10:20:00Z", "mappings": { "245": "pool-b" } }
+{ "epoch": 82, "generatedAt": "2026-07-21T10:20:00Z", "ttlSeconds": 900,
+  "mappings": { "245": "pool-b" },
+  "signature": "ed25519:base64..." }
 ```
 **Bất biến:**
 - Router **từ chối phục vụ** nếu mapping cũ hơn epoch hiện hành hoặc quá TTL.
 - Agent ACK theo **epoch cụ thể**: `ACK(node, epoch)` — idempotent, so sánh được (KHÔNG
   ACK kiểu "đã reload", vì node có thể reload đúng lúc epoch mới vừa phát hành).
 - Workflow migration chỉ được `Delete Old` **sau khi ACK-ALL** từ mọi node liên quan.
+- **Mapping phải được ký, và Router phải xác minh chữ ký trước khi áp dụng.** Khoá ký
+  thuộc Control Plane; node chỉ giữ public key (nạp lúc enroll). Mapping sai chữ ký ⇒
+  **giữ nguyên bản cũ và báo động**, không bao giờ áp dụng.
+
+  Vì sao chữ ký là bắt buộc chứ không phải tuỳ chọn: mapping là thứ quyết định
+  **WordPress ghi đơn hàng vào database nào**. Ai ghi được file mapping trên node thì
+  chuyển hướng được toàn bộ ghi của một store sang database họ kiểm soát — mà không cần
+  chạm tới database thật, không cần credential (`connectionRef` cũng vô dụng với họ),
+  và **không để lại dấu vết trong log ứng dụng**. Epoch và TTL chống được *mapping cũ*,
+  nhưng không chống được *mapping giả có epoch cao hơn*. Chỉ chữ ký chống được.
 
 ### 5. Migration: RPO = 0
 ```
@@ -134,9 +146,44 @@ hàng đợi và log.
   chứa, **giảm giá trị còn lại của Multisite**. Hai quyết định phải cân nhắc cùng nhau;
   `ADR-005` được cập nhật để tham chiếu mục này.
 - **A1 spike phải đổi**: hiện đo subsite prefix `wp_N_*`; phải đo **database-per-store ở
-  quy mô** — thời gian `CREATE DATABASE`, 10.000 database × ~12 bảng ≈ 120k bảng
-  (`innodb_file_per_table`, `table_open_cache`, `open_files_limit`). Đây là số liệu
-  **quyết định tính khả thi** của topology và hiện **chưa có**.
+  quy mô** — thời gian `CREATE DATABASE` và các giới hạn `innodb_file_per_table`,
+  `table_open_cache`, `open_files_limit`. Đây là số liệu **quyết định tính khả thi** của
+  topology và hiện **chưa có**.
+
+### Cơ sở quy mô — đo thật 2026-07-21 (thay cho ước lượng cũ "~12 bảng")
+
+Bản đầu của ADR này ước lượng ~12 bảng/store, tức **chỉ đếm WordPress core**. Đo trên
+dev env (WordPress 7.0.2 + WooCommerce thật, MariaDB 11.8):
+
+| Đại lượng | Đo được (store rỗng) |
+|---|---|
+| Bảng / store | **50** — 48 theo tiền tố subsite + `wp_users`/`wp_usermeta` |
+| File `.ibd` / store | 48, trung bình ~107 KB |
+| Đĩa / store | **5.0 MB** khi chưa có dữ liệu |
+
+Ngoại suy 10.000 store: **480.000 bảng** và **~50 GB đĩa trước khi có bất kỳ đơn hàng nào**
+— gấp **4 lần** ước lượng cũ. Mọi phép tính quy mô trong ADR này và `ADR-005` phải dùng con
+số 48.
+
+Lưu ý cách đếm: 48 bảng là những gì tiền tố `wp_N_*` của Multisite chứa. `wp_users`/
+`wp_usermeta` **không** nằm trong đó vì Multisite để chúng ở bảng global — chính là điều
+`AP-002` phản đối. Với `database-per-store` hai bảng đó thuộc về store, nên con số đúng để
+tính quy mô là **50**.
+
+**Đã đo — Spike Report #002 (`scripts/spike/REPORT-002-table-cache.md`):**
+
+```
+Số store tối đa mỗi node ≈ table_open_cache ÷ số bảng nóng mỗi store
+```
+
+Với `table_open_cache=2000` mặc định: 105 store vừa khít, **120 store thrash** —
+`Opened_tables` tăng đều mỗi lượt, không bao giờ ổn định. Nếu toàn bộ 50 bảng đều nóng thì
+trần là **~40 store/node**.
+
+**Hệ quả bắt buộc:** `table_open_cache` và `open_files_limit` là **tham số cấu hình Runtime
+phải suy ra từ mật độ store dự kiến**, không được để mặc định. 200 store × 50 bảng đòi
+`table_open_cache ≥ 10.000`. Đây là ràng buộc vận hành của `database-per-store`, và Agent
+phải cấu hình nó khi dựng node (`19-Runtime-Implementation.md`).
 - Backup/restore phải **pool-aware**; đổi lại blast radius nhỏ hơn nhiều.
 - "Hot Store → Enterprise Pool" **dùng chung cơ chế** với Store Migration (S-7), không xây
   hai hệ thống song song.

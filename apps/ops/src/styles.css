@@ -86,6 +86,25 @@ h3 { font-size: 15px; }
 .cluster-card { min-height: 190px; }
 .node-list { border-top: 1px solid #e4ebe7; }
 .node-row { align-items: center; border-bottom: 1px solid #e4ebe7; display: flex; font-size: 12px; justify-content: space-between; padding: 13px 0; }
+.health-toolbar { align-items: center; display: flex; flex-wrap: wrap; gap: 14px; justify-content: space-between; margin-top: 24px; }
+.health-toolbar .muted { margin: 0; }
+.health-empty { background: #fbfcfb; border: 1px dashed #cbd8d1; color: #53685f; padding: 36px 24px; text-align: center; }
+.health-grid { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); margin-top: 28px; }
+.health-cluster { background: #fff; border: 1px solid #dde5e0; padding: 24px; }
+.health-cluster-heading { align-items: flex-start; border-bottom: 1px solid #e4ebe7; display: flex; gap: 18px; justify-content: space-between; padding-bottom: 18px; }
+.health-cluster-heading h2 { margin: 0; }
+.health-cluster-heading .muted { margin-top: 5px; }
+.health-node { border-bottom: 1px solid #e4ebe7; padding: 18px 0; }
+.health-node:last-child { border-bottom: 0; padding-bottom: 0; }
+.health-node.is-stale { background: #fff5f0; border-left: 4px solid #d7654f; margin-left: -12px; padding-left: 8px; padding-right: 8px; }
+.health-node-heading { align-items: flex-start; display: flex; gap: 14px; justify-content: space-between; }
+.health-node-heading h3 { margin: 0; overflow-wrap: anywhere; }
+.health-node-alert { color: #943b2c; font-size: 11px; font-weight: 750; line-height: 1.45; margin: 8px 0 0; }
+.health-metrics { display: grid; gap: 10px; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 16px 0 0; }
+.health-metric { background: #f4f6f5; padding: 10px; }
+.health-metric dt { color: #6d7d77; font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.health-metric dd { font-size: 16px; font-weight: 760; margin: 5px 0 0; }
+.health-heartbeat { color: #6d7d77; font-size: 11px; margin: 12px 0 0; }
 
 .login-layout { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(360px, .9fr); min-height: 100vh; }
 .login-intro { background: #162521; color: #f5f7f5; display: flex; flex-direction: column; justify-content: center; padding: clamp(34px, 8vw, 120px); }
@@ -116,4 +135,16 @@ h3 { font-size: 15px; }
   .usage-meter { grid-column: 1 / -1; width: 100%; }
   .operation-detail { align-items: flex-start; flex-direction: column; gap: 8px; }
   .availability-panel { padding: 24px; }
+  .health-grid { grid-template-columns: 1fr; }
+  .health-metrics { grid-template-columns: 1fr; }
 }
+
+/* Admin console — tabular operator views. The customer portal is card-based;
+   operator work is comparing many rows at a glance, so it gets tables. */
+.data-table { border-collapse: collapse; margin-top: 22px; width: 100%; }
+.data-table th { border-bottom: 1px solid #dde5e0; color: #6d7d77; font-size: 10px; font-weight: 800; letter-spacing: .12em; padding: 0 14px 10px 0; text-align: left; text-transform: uppercase; }
+.data-table td { border-bottom: 1px solid #eef2f0; font-size: 13px; padding: 13px 14px 13px 0; vertical-align: middle; }
+.data-table td.muted { font-size: 12px; }
+.data-table tr:hover td { background: #fbfcfb; }
+.data-table select { background: #fff; border: 1px solid #d7dfdb; font-size: 12px; min-height: 34px; padding: 0 8px; }
+.data-table code { background: #f1f5f3; font-size: 12px; padding: 2px 6px; }

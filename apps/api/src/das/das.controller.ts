@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { IsIn, IsInt, IsNotEmpty, IsOptional, IsString, Max, Min } from 'class-validator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { PlatformRole, PlatformRoleGuard } from '../auth/platform-role.guard';
 import { DB_POOL_STATUSES, DbPoolStatus, RegisterPoolInput } from './allocation.types';
 import { DatabaseAllocationService } from './das.service';
 
@@ -61,7 +62,8 @@ class UpdatePoolStatusBody {
 }
 
 @Controller()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PlatformRoleGuard)
+@PlatformRole('operator')
 export class DasController {
   constructor(private readonly das: DatabaseAllocationService) {}
 
