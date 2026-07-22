@@ -5,6 +5,18 @@
 **Accepted** (Blueprint v1.1, 2026-07-21). Dẫn xuất từ `AP-002` (Platform Data Ownership).
 Là điều kiện để `ADR-006` (database-per-store) sống được.
 
+### ⚠️ Cập nhật 2026-07-22 — `ADR-005` chốt Multisite
+
+Runtime Identity là **GLOBAL**, không per-store. `wp_users`/`wp_usermeta` dùng chung cho cả
+network (`wp-includes/class-wpdb.php:324` — WordPress core, không cấu hình được).
+
+**Cơ chế "Platform giữ bảng ánh xạ John → Store A wp user 15, Store B wp user 3" KHÔNG khả
+thi** dưới Multisite: một người chỉ có **một** `wp_users.ID` trong cả network. Quyền theo
+store nằm ở `wp_usermeta` với khoá `wp_N_capabilities`.
+
+Phần Platform Identity (PostgreSQL là nguồn sự thật) **vẫn đúng nguyên vẹn**. Chỉ tầng
+Runtime Identity đổi. Xem giới hạn cô lập tenant trong `ADR-005`.
+
 ## Bối cảnh
 
 Câu hỏi cốt lõi: **ai sở hữu user?**

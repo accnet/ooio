@@ -139,6 +139,17 @@ _Đính chính (không tăng version — sửa số liệu, không đổi quyế
   nhật một lần" **không còn là lợi thế riêng của Multisite**. Status vẫn **không đổi**: còn
   thiếu portability (chặn ở HPOS của WooCommerce).
 
+- **2026-07-22 — `ADR-005` chuyển sang `Accepted`: WordPress Multisite, một Network = một
+  Database = một Cluster.** Cluster có định nghĩa vật lý (1 Multisite + 1 MySQL + Redis +
+  PHP-FPM + 1 Agent); mở rộng bằng cách **thêm Cluster**, Scheduler chọn Cluster chứ không
+  chọn pool/database. **Database Router (LudicrousDB) KHÔNG triển khai ở H1** — `wpdb` chuẩn
+  là đủ. **`database-per-store` chuyển từ mặc định thành tuỳ chọn tương lai**, kích hoạt bởi
+  **yêu cầu kinh doanh** (Enterprise đòi store độc lập, chuyển region), không phải ngưỡng kỹ
+  thuật. `ADR-006` mục 1 và lộ trình H1 cập nhật theo; `ADR-007` ghi rõ Runtime Identity là
+  GLOBAL. **Ghi rõ trong ADR-005 rằng Exit Criteria CHƯA hoàn thành** — tiêu chí 2 (Isolation
+  Benchmark) và 4 (Plugin Compatibility) chuyển thành **rủi ro vận hành bắt buộc đo trước
+  production**; tiêu chí 3 (Restore per-store) là **giới hạn đã biết**, không đạt được.
+
 _Lịch sử version_
 - **v1.1** — 2026-07-21 — Current. + AP-001/AP-002 (principles), ADR-006 Database Platform,
   ADR-007 Platform Identity; ADR-005 cập nhật tham chiếu database topology.

@@ -2,10 +2,29 @@
 
 ## Status
 
-**Open (Preferred Direction: WordPress Multisite)** — xem `Blueprint/DOC-STATUS.md`.
+**Accepted (2026-07-22)** — WordPress Multisite, **một Network = một Database = một Cluster**.
 
-Chỉ chuyển sang `Accepted` khi hoàn thành toàn bộ **Exit Criteria** bên dưới. Không
-đóng ADR nền tảng bằng niềm tin/kinh nghiệm — chỉ đóng bằng dữ liệu kiểm chứng.
+### Vì sao chốt khi Exit Criteria chưa hoàn thành
+
+ADR này ban đầu quy định chỉ `Accepted` khi xong **toàn bộ** Exit Criteria. Điều đó **không
+được thoả**, và phải ghi rõ thay vì lặng lẽ bỏ qua:
+
+| Exit Criteria | Trạng thái |
+|---|---|
+| 1. Runtime Spike | **một phần** — Spike #003, #004 |
+| 2. Isolation Benchmark (noisy neighbor) | **chưa đo** |
+| 3. Restore per-store | **không thể trọn vẹn** — `wp_users` global (xem bên dưới) |
+| 4. Plugin Compatibility Matrix | **chưa đo** |
+
+**Cơ sở quyết định đã đổi.** Exit Criteria được viết để trả lời *"Multisite có đủ tốt
+không?"*. Số liệu thu được lại trả lời một câu khác — *"database-per-store có hợp với
+Multisite không?"* — và câu trả lời là **không**. Quyết định hiện tại dựa trên: giữ
+Multisite (đã xây xong MU Plugin, luồng 3-plane đã chạy thật) và **chấp nhận các giới hạn
+đã biết**, thay vì viết lại site lifecycle cho Isolated.
+
+Tiêu chí **2 và 4 không biến mất** — chúng chuyển từ *điều kiện quyết định* thành **rủi ro
+vận hành bắt buộc đo trước khi lên production**. Tiêu chí 3 chuyển từ *chưa đo* thành **giới
+hạn đã biết**: nó không thể đạt được dưới Multisite, không phải vì chưa thử.
 
 Lưu ý về nguồn: toàn bộ `idea/` (idea0 → plan-12) đều mặc định dùng Multisite nhưng
 chưa từng so sánh với phương án thay thế — Multisite là *giả định thừa kế*, ADR này
@@ -160,16 +179,68 @@ Cập nhật Distribution = thay bản gốc một lần, cả N store thấy ng
 Vì vậy ADR này tiếp tục để Open/Preferred Direction hiện hành; không thể chốt ADR nền
 tảng bằng niềm tin, đúng mục đích ban đầu của ADR-005.
 
-## Decision (hiện hành)
+## Decision
 
-- Runtime hiện tại sử dụng **WordPress Multisite trên mỗi Cluster** — đây là topology
-  dùng để triển khai từ Phase 1.
-- **Không** triển khai mô hình Isolated Single-sites ở giai đoạn hiện tại.
-- Kiến trúc SaaS và Go Agent phải **độc lập với Runtime topology** thông qua
-  `WordPress Adapter` / `WordPressClient` — nếu sau này đổi topology, thiệt hại giới
-  hạn ở tầng Runtime, không lan lên Control/Management Plane.
-- Quyết định cuối cùng được xác nhận **sau Phase 5 Stress Test**, trước khi đóng băng
-  API Contract.
+**Cluster có định nghĩa vật lý:**
+
+```
+Cluster  =  1 WordPress Multisite Network
+          + 1 MySQL Server (+ replica)
+          + Redis + PHP-FPM
+          + 1 Go Agent
+```
+
+**Một Cluster có MỘT database**, chứa cả bảng global (`wp_users`, `wp_usermeta`, `wp_blogs`,
+`wp_site`, `wp_sitemeta`…) và toàn bộ bảng `wp_N_*` của mọi store trong network.
+
+**Mở rộng bằng cách thêm Cluster, không phải chia nhỏ một network:**
+
+```
+Cluster HK-01 → ~300 store      Scheduler chọn CLUSTER,
+Cluster HK-02 → ~300 store      không chọn pool/database
+Cluster HK-03 → ~300 store
+```
+
+**Không triển khai Database Router (LudicrousDB) ở H1.** Runtime dùng `wpdb` chuẩn:
+`blog_id → wpdb` là đủ. Không cần mapping, epoch, ACK hay chữ ký mapping.
+
+**`database-per-store` KHÔNG bị loại bỏ** — nó chuyển thành khả năng mở rộng tương lai,
+kích hoạt bởi **yêu cầu kinh doanh**, không phải ngưỡng kỹ thuật. Ví dụ: hợp đồng Enterprise
+đòi backup/restore/clone/export store độc lập, hoặc yêu cầu chuyển store sang region khác.
+Ngưỡng kỹ thuật kiểu *"backup quá lâu"* **không** phải tiêu chí — vấn đề đó giải được bằng
+cách khác rẻ hơn nhiều.
+
+Kiến trúc SaaS và Go Agent vẫn phải **độc lập với Runtime topology** qua `WordPress Adapter`
+— nếu sau này đổi, thiệt hại giới hạn ở tầng Runtime.
+
+## ⚠️ Giới hạn cô lập tenant — phải đọc trước khi hứa với khách hàng
+
+Quyết định này chấp nhận một giới hạn **không khắc phục được bằng cấu hình**:
+
+**Khách hàng WooCommerce chính là bản ghi trong `wp_users`, và `wp_users` là bảng dùng chung
+của cả network.** Hệ quả thực tế:
+
+| Tình huống | Hệ quả |
+|---|---|
+| Xoá một store | dữ liệu khách hàng của store đó **vẫn nằm lại** trong bảng chung |
+| Bán / chuyển nhượng store | **không tách được** khách hàng ra để giao |
+| Yêu cầu xoá dữ liệu (GDPR) | phải lọc thủ công trong bảng chung của mọi tenant |
+| Rò rỉ `wp_users` | lộ khách hàng của **toàn bộ** tenant trong cluster, không phải một |
+| Restore một store | **vẫn phải loại trừ** `wp_users`/`wp_usermeta` |
+
+Thêm một rủi ro vận hành đã đo được (Spike #004): ranh giới giữa các store là **một quy ước
+đặt tên**, và quy ước có thể viết sai —
+
+```
+LIKE 'wp\_2\_%'   →   10 bảng   (đúng)
+LIKE 'wp_2_%'     →  110 bảng   (sai: `_` là ký tự đại diện trong SQL)
+```
+
+**Bắt buộc:** mọi code lọc bảng theo `wp_N_` phải escape `_`. Đây không phải khuyến nghị
+phong cách — quên nó sẽ **trộn dữ liệu giữa các tenant** và im lặng cho tới khi network có
+blog hai chữ số.
+
+Phần này nên tách thành ADR riêng nếu cô lập tenant trở thành cam kết hợp đồng.
 
 ## Vì sao ưu tiên Multisite
 

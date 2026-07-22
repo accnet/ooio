@@ -16,6 +16,29 @@ Sự cố 2026-07-21 (HyperDB fatal trên WP 7.0, thay bằng LudicrousDB với 
 ## Quyết định
 
 ### 1. Phân tầng topology
+
+> **⚠️ Cập nhật 2026-07-22 — `ADR-005` đã chốt Multisite, mục này thay đổi căn bản.**
+>
+> ```
+> Cluster  →  Store            (mặc định hiện hành)
+> ```
+> **Một Cluster = một Multisite Network = một MySQL Server = MỘT database.** Database
+> **không còn là đơn vị scale**; Cluster mới là. Scheduler chọn **Cluster**, không chọn
+> pool/database.
+>
+> **`database-per-store` chuyển thành TUỲ CHỌN TƯƠNG LAI**, không phải mặc định. Lý do
+> không phải vì sai, mà vì **ROI quá thấp dưới Multisite**: nó không mang lại restore sạch,
+> không mang lại portability, không cho phép tách server, không đổi được identity, và không
+> giảm áp lực `table_open_cache` — chỉ còn backup granularity và blast radius, trong khi
+> phải xây Database Router + mapping + epoch + ACK + chữ ký.
+>
+> **Kích hoạt bằng yêu cầu KINH DOANH, không phải ngưỡng kỹ thuật** — ví dụ hợp đồng
+> Enterprise đòi store độc lập về backup/restore/clone/export, hoặc chuyển store sang region
+> khác. *"Backup quá lâu"* không phải tiêu chí.
+>
+> Phần mô tả bên dưới giữ nguyên làm **thiết kế tham chiếu cho tuỳ chọn đó**, chỉ khả thi
+> trọn vẹn với Isolated Single-site.
+
 ```
 Pool  →  Database  →  Dataset  →  Store
 ```
@@ -144,7 +167,7 @@ hàng đợi và log.
 | Phase | Nội dung |
 |---|---|
 | **H0** (MVP) | 1 cluster, 1 pool, `wpdb` chuẩn. **DAS đã tồn tại** nhưng luôn trả `Pool A` — đúng contract §10 |
-| **H1** | Nhiều pool/cluster; Router định tuyến theo `blog_id`; DAS cân bằng store mới; pool lifecycle thủ công + alert |
+| **H1** | ~~Router định tuyến theo `blog_id`~~ **HUỶ theo ADR-005**. Thay bằng: nhiều **Cluster**, Scheduler cân bằng store mới giữa các Cluster, cluster lifecycle thủ công + alert. Runtime dùng `wpdb` chuẩn |
 | **H2** | Replica, health check, **migration RPO=0**, failover **manual-assisted** |
 | **H3** | Đa cluster/region; DAS thành dịch vụ phân phối toàn cục (region, latency, chi phí) |
 | **H4** | Cân nhắc auto-failover khi đủ fencing + semi-sync |
