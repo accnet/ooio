@@ -39,7 +39,7 @@ Check Plan
   ↓
 Allocate Cluster (Scheduler)
   ↓
-Allocate Database (HyperDB mapping)
+Allocate Database (DAS chọn pool; Agent đồng bộ Database Router mapping)
   ↓
 Create Site (Agent → MU Plugin → wpmu_create_blog)
   ↓

@@ -28,17 +28,17 @@ Store     sở hữu  Commerce Data     →  Database riêng của từng store
 | Workflow, Operation, Audit, Cluster/Node/Pool registry | Platform | PostgreSQL |
 | Analytics / projection (tổng hợp từ event) | Platform | PostgreSQL |
 | **User (source of truth)** | **Platform** | **PostgreSQL** |
-| **`wp_users` / `wp_usermeta` (PROJECTION)** | **Store** | **Database của store** |
+| **Runtime Identity projection** | **Runtime** | **Vị trí cụ thể do topology quyết định; xem `ADR-007`** |
 | `wp_site`, `wp_blogs`, network metadata | Runtime | MySQL Global |
 | Distribution version đang chạy trên node | Runtime | MySQL Global / node state |
 | Products, Orders, Customers, Options, Posts, bảng WooCommerce | Store | Database riêng |
 
-> **Dòng `wp_users` là bắt buộc phải đọc kỹ.** WordPress **không chạy được** nếu thiếu
-> bảng `wp_users` — nó cần cho auth, capabilities, author, customer của đơn hàng. Vì vậy
-> `wp_users` **tồn tại trong từng store database** dưới dạng **projection** của Platform
-> Identity (xem `ADR-007`). Nó **KHÔNG** nằm ở Runtime Global. Đặt `wp_users` vào lớp
-> global sẽ phá vỡ tính tự chứa của store database và làm sống lại bài toán cross-database
-> JOIN (`AP-001`) lẫn bài toán restore-per-store.
+> **AP-002 không quyết định vị trí vật lý của `wp_users`/`wp_usermeta`.** Nguyên lý chỉ
+> khẳng định Platform sở hữu Platform Identity, Runtime chỉ nhận projection, và không lớp
+> nào đọc trực tiếp database của lớp khác. Vị trí của Runtime Identity là hệ quả của
+> topology cụ thể, được chốt trong `ADR-007`: per-store với Isolated và GLOBAL với
+> Multisite. Vì vậy quy tắc ownership và hai chiều projection của AP-002 đúng với **mọi**
+> topology; không được dùng AP-002 để suy ra rằng `wp_users` luôn per-store.
 
 ## Hai chiều projection (không phải một chiều)
 

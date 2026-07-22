@@ -51,7 +51,7 @@ Ví dụ `manifest.json`:
 
 ```
 Cluster HK-01
-├── Node-01: Go Agent, Caddy, PHP-FPM, Redis, WordPress Multisite, HyperDB
+├── Node-01: Go Agent, Caddy, PHP-FPM, Redis, WordPress Multisite, Database Router
 ├── Node-02: Go Agent, PHP-FPM, WordPress
 └── Database Pool: MySQL-A, MySQL-B, MySQL-C
 ```
@@ -62,7 +62,7 @@ ký (self-registration) và gửi Node Manifest khai báo capability:
 ```json
 {
   "nodeId": "wp-hk-01",
-  "capabilities": { "wordpress": true, "multisite": true, "hyperdb": true, "ssl": true },
+  "capabilities": { "wordpress": true, "multisite": true, "database_router": true, "ssl": true },
   "versions": { "wordpress": "6.9", "php": "8.4", "agent": "1.2.0" }
 }
 ```

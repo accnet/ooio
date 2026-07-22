@@ -25,7 +25,7 @@ BullMQ Job (pending) → Go Agent poll job
   │
   ▼
 Go Agent (Workflow Runner)
-  ├── Allocate / Create Database (HyperDB mapping)
+  ├── Allocate / Create Database (DAS chọn pool; Agent đồng bộ Database Router mapping)
   ├── WordPress Adapter → MU Plugin (REST 127.0.0.1)
   │      └── wpmu_create_blog() → switch_to_blog()
   ├── Activate Distribution (theme + core plugin set)
@@ -66,9 +66,9 @@ Done — WordPress không cần biết SSL tồn tại (transparent với Runtim
 
 ## Nguyên tắc thứ tự Database trước Site
 
-Agent luôn tạo database và cập nhật HyperDB mapping **trước**, MU Plugin mới tạo blog
+Agent luôn tạo database và cập nhật Database Router mapping **trước**, MU Plugin mới tạo blog
 và ghi bảng dữ liệu **sau** — tránh WordPress ghi vào database chưa tồn tại/chưa có
-quyền (xem thêm `05-HyperDB.md`).
+quyền (xem thêm `05-Database-Router.md`).
 
 ## Provisioning độc lập với SaaS ở giai đoạn Runtime-first
 

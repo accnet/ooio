@@ -54,6 +54,42 @@ hot path).
 
 Exit Criteria bên dưới vẫn giữ nguyên, **bổ sung** tiêu chí database-per-store ở quy mô.
 
+## ⚠️ Bằng chứng độc lập 2026-07-22 — database-per-store không tương thích trọn vẹn với Multisite
+
+BA đã phát hiện độc lập ba điểm xung đột dưới đây; đây là khung bằng chứng để chốt ADR,
+không phải quyết định mới. Nguồn kiểm chứng là WordPress core và **Spike Report #002**:
+
+1. Trong Multisite, `wp_users` và `wp_usermeta` là **GLOBAL**. `wp-includes/class-wpdb.php:324`
+   định nghĩa các bảng này dùng chung và không có cấu hình để đổi thành bảng per-store.
+2. Vì vậy khuôn schema trích từ các bảng `wp_2_*` bị thiếu `wp_users`/`wp_usermeta` — đúng
+   như đã ghi nhận trong **Spike Report #002**. Hai bảng này không nằm trong phần schema
+   có tiền tố site của Multisite.
+3. Khi bảng của Store 245 nằm trong database `store_245`, tên bảng vẫn là
+   `wp_245_posts`. `get_blog_prefix()` tại `wp-includes/class-wpdb.php:1084` luôn trả
+   `wp_N_`, và WordPress core gọi nó ở 20 chỗ. **LudicrousDB chỉ định tuyến kết nối;
+   nó không đổi tên bảng.**
+
+Hệ quả kiến trúc là database-per-store + Multisite buộc database của store và database
+global phải ở **cùng một MySQL server**, vì JOIN vượt database chỉ chạy được khi các
+database ở cùng server (ràng buộc AP-001). Do đó pool thực tế suy biến thành **một pool
+mỗi server**: store có thể **movable** giữa các pool bằng cách đổi mapping (blog ID không
+đổi), nhưng không **portable** sang server độc lập. Việc clone/export vẫn phải đổi tên
+khoảng 50 bảng, tạo lại capabilities và ánh xạ user ID.
+
+Đây cũng là vấn đề PII, không chỉ là chi tiết kỹ thuật: khách hàng WooCommerce chính là
+các bản ghi trong `wp_users`, nên khách của mọi store Multisite nằm chung một bảng. Xóa
+store không xóa được khách hàng; bán hoặc chuyển nhượng store không tách được dữ liệu;
+yêu cầu xóa theo GDPR phải lọc trong bảng dùng chung; và lộ bảng này làm lộ khách hàng
+của **toàn bộ tenant**.
+
+Đã cân nhắc phương án trung gian kiểu WordPress.com: giữ Multisite và nhân bản read-only
+database global xuống từng pool để JOIN chạy cùng server. Cách này giải quyết bài toán
+JOIN nhưng không giải quyết bài toán PII, nên là giải pháp sai cho nền tảng thương mại.
+
+Vẫn còn thiếu **chi phí provisioning của Isolated**: harness đã có nhưng **CHƯA CHẠY**.
+Vì vậy ADR này tiếp tục để Open/Preferred Direction hiện hành; không thể chốt ADR nền
+tảng bằng niềm tin, đúng mục đích ban đầu của ADR-005.
+
 ## Decision (hiện hành)
 
 - Runtime hiện tại sử dụng **WordPress Multisite trên mỗi Cluster** — đây là topology

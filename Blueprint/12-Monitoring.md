@@ -46,6 +46,6 @@ khách hàng) để đội vận hành theo dõi sức khoẻ toàn bộ Cluster
 ## Ngưỡng cần xác định qua Stress Test (Phase 6 của Roadmap)
 
 Trước khi vào Production, Monitoring phải trả lời được các câu hỏi định lượng: một
-Cluster/Node chịu được bao nhiêu site đồng thời trước khi PHP Worker bão hoà, HyperDB
+Cluster/Node chịu được bao nhiêu site đồng thời trước khi PHP Worker bão hoà, Database Router
 routing có phát sinh nghẽn khi database pool lớn, Redis hit rate giảm ở ngưỡng nào —
 xem `13-Roadmap.md` (Phase Stress Test).

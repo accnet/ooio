@@ -27,7 +27,7 @@ Runtime/Agent, không phải NestJS.
 
 | Gate | Vị trí | Câu hỏi phải trả lời | Bằng chứng |
 |---|---|---|---|
-| **Gate 1 — Multisite scale** | Cuối spike Phase 1 (kéo lên tuần 1) | Tạo 500–1000 site có gãy không? Provisioning bao lâu? `wp_blogs`/HyperDB nghẽn ở đâu? | Spike Report #001 (ADR-005) |
+| **Gate 1 — Multisite scale** | Cuối spike Phase 1 (kéo lên tuần 1) | Tạo 500–1000 site có gãy không? Provisioning bao lâu? `wp_blogs`/Database Router nghẽn ở đâu? | Spike Report #001 (ADR-005) |
 | **Gate 2 — Runtime tự vận hành** | Cuối Phase 4 | Tạo/xoá/backup/**restore**/SSL một store hoàn chỉnh bằng Postman gọi thẳng Agent, không cần SaaS? | Provisioning demo + Restore Test Report |
 | **Gate 3 — API Contract freeze** | Sau Phase 5 (Stress Test) | Contract phản ánh đúng cái Runtime *thật sự* làm được sau khi chịu tải? | OpenAPI v1 + Stress Test Report |
 

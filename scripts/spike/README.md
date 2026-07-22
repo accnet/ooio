@@ -110,6 +110,69 @@ including database count, table count, data/index/total bytes,
 when automatic `mysqld`/`mariadbd` discovery is not suitable. The server values are
 read-only observations and are not changed by the harness.
 
+## Store lifecycle harness
+
+`measure-store-lifecycle.sh` measures the operations that happen after a store
+has been provisioned. It is intentionally a separate, destructive harness and
+must only be pointed at disposable Multisite blogs and isolated databases.
+It does not run as part of the repository tests; validate it with `bash -n` and
+run it only from a documented spike environment.
+
+Select a cohort with `SPIKE_OPERATION=delete`, `clone`, `upgrade`, or `all`.
+The CSV is append-only after its header, so interrupted cohorts can resume with
+`SPIKE_MULTISITE_DELETE_START`, `SPIKE_ISOLATED_DELETE_START`,
+`SPIKE_CLONE_START`, or `SPIKE_UPGRADE_START`. The Multisite delete cursor
+defaults to blog 2 so the network's main blog (blog 1) is not selected by
+accident. The output
+schema is shared by every operation:
+
+`operation,topology,method,item_number,source_id,target_id,started_at_utc,finished_at_utc,elapsed_ms,cpu_user_s,cpu_system_s,cpu_total_s,files_created,files_deleted,storage_before_bytes,storage_after_bytes,storage_reclaimed_bytes,table_count_before,table_count_after,iops,status,error_stage,notes`
+
+DELETE runs `wpmu_delete_blog(<id>, true)` for Multisite and `DROP DATABASE`
+plus removal of the isolated store directory for Isolated. It records the
+database/table and filesystem bytes before and after each operation. Compare
+the deletion timings with the corresponding provisioning timings: deletion is
+expected to be slower for Multisite because roughly 50 prefixed tables are
+removed. The report must state whether that expectation was observed rather
+than treating it as a result in advance.
+
+CLONE is the primary topology comparison. Isolated uses `mysqldump` piped into
+`mysql` for one database. Multisite copies every `wp_<source>_*` table to the
+target prefix, updates `wp_blogs`, recreates the target capabilities key in
+the global `wp_usermeta`, and runs a URL search-replace over the copied tables.
+Set `SPIKE_MULTISITE_SOURCE_URL` and `SPIKE_MULTISITE_TARGET_URL` for the URL
+step; the default clone example is blog 2 to blog 7.
+
+UPGRADE always emits both isolated methods: `symlink` to the shared
+`SPIKE_DISTRIBUTION_SOURCE` and `copy` into a private directory. Do not compare
+Multisite with only the private-copy result. Upgrade Distribution is the one
+measurement that can favor Multisite; the CSV note records this limitation so
+the report can disclose it. The other common harnesses already favor Isolated,
+so this single balancing measurement should be shown explicitly instead of
+being used as a post-hoc justification.
+
+In addition to elapsed time, the harness records process CPU time, file/link
+creation and deletion counts, and apparent storage bytes. IOPS is not measured
+by this shell harness and is recorded as `not_measured` in every row; it must
+never be left blank or inferred from elapsed time.
+
+Example configuration (do not run against production):
+
+```bash
+export WP_PATH=/srv/wordpress
+export SPIKE_MULTISITE_DATABASE=wordpress_spike
+export SPIKE_MULTISITE_SOURCE_URL=https://source.example.test/site-2/
+export SPIKE_MULTISITE_TARGET_URL=https://clone.example.test/site-7/
+export SPIKE_ISOLATED_DATABASE_PREFIX=store_
+export SPIKE_ISOLATED_ROOT=/var/tmp/spike-001-isolated-sites
+export SPIKE_DISTRIBUTION_SOURCE=/srv/wordpress
+export SPIKE_LOG_DIR=/var/tmp/spike-001-lifecycle
+
+bash -n scripts/spike/measure-store-lifecycle.sh
+SPIKE_OPERATION=clone scripts/spike/measure-store-lifecycle.sh
+SPIKE_OPERATION=upgrade scripts/spike/measure-store-lifecycle.sh
+```
+
 `measure-isolated-provisioning.sh` writes one row per isolated store to
 `isolated-provisioning.csv`:
 

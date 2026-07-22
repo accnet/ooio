@@ -8,14 +8,14 @@
 
 - **Phase 0**: monorepo scaffold, `manifest.schema.json`, OpenAPI (F0).
 - **Runtime/Distribution (R1/R3/R4/A3)**: WooCommerce + Core Plugin Set, config profiles
-  (default/perf/security), Distribution builder, DB module (DB-before-site + HyperDB gen).
+  (default/perf/security), Distribution builder, DB module (DB-before-site + Database Router gen).
 - **MU Plugin (B1–B4)**: 8 endpoint live; createSite dùng network domain + finalize
   (flush rewrite + public) → store tạo ra **browse được ngay**.
 - **Go Agent (C1–C6, P1–P5, N1–N5)**: register/heartbeat/job-loop, provisioning +
   CreateStore orchestration có rollback, SSL/backup/restore-per-store, domain+Caddy,
-  metrics + Prometheus, Runtime CLI, install-node.sh one-shot (Redis+HyperDB+plugins).
+  metrics + Prometheus, Runtime CLI, install-node.sh one-shot (Redis+LudicrousDB+plugins).
 - **API Contract v1 (F1)**: đóng băng Stable, khớp code Go/PHP.
-- **HyperDB**: cấu hình single-pool, chạy qua toàn bộ query.
+- **Database Router**: cấu hình single-pool, chạy qua toàn bộ query bằng implementation LudicrousDB.
 - **Env production-like**: 6 systemd user service + Redis object cache + Agent daemon;
   **full 3-plane chạy thật** (mock SaaS → Agent → MU Plugin → store browse được).
 - **Gói deploy**: `install-node.sh` + `node-config.env.sample` + `DEPLOY.md`.
@@ -28,7 +28,7 @@
 - [ ] **A1** Chạy `install-node.sh --system` thật trên VPS Ubuntu → vá dry-run→real
   (tên php-fpm service, MariaDB root auth, Caddy repo…). Xem `apps/agent/deploy/DEPLOY.md`.
 - [ ] **A2** **Gate 1 spike** 500 → 1000 site bằng `scripts/spike/*` → *Spike Report #001*
-  (provisioning time, `wp_blogs` size, HyperDB routing latency).
+  (provisioning time, `wp_blogs` size, Database Router routing latency).
 - [ ] **A3** **Isolation / noisy-neighbor benchmark** (2 chế độ) — Exit Criteria ADR-005.
 - [ ] **A4** **Chốt ADR-005** (Accepted/Superseded) bằng số liệu thật.
 
@@ -48,7 +48,7 @@ Code theo Contract v1 đã đóng băng. Nhiện có mock SaaS cho dev; NestJS t
 
 ## 🧱 H — Runtime hardening / production-completeness
 
-- [ ] **H1** **HyperDB multi-pool**: dựng thêm MySQL pool (B/C), `db-config.php` partition
+- [ ] **H1** **Database Router multi-pool**: dựng thêm MySQL pool (B/C), `db-config.php` partition
   theo dataset, wire module R4 để Agent cấp DB tự động. (single-pool đã xong.)
 - [ ] **H2** **Distribution bundle thật**: đóng gói một bản v1 có version + checksum, đẩy
   Artifact Repo (MinIO/S3), + quy trình rollout (canary/staged) & rollback per-store.
@@ -58,7 +58,7 @@ Code theo Contract v1 đã đóng băng. Nhiện có mock SaaS cho dev; NestJS t
   Node Manifest routing.
 - [ ] **H5** **SSL thật** trên domain public (C4 live, Let's Encrypt) — cần domain.
 - [ ] **H6** Backup/restore ở quy mô + **disaster recovery drill** trên DB lớn.
-- [ ] **H7** Vá nhỏ: HyperDB + PHP 8.3 + WP-CLI shutdown notice; consolidate `idea/context`.
+- [ ] **H7** Vá nhỏ: LudicrousDB + PHP 8.3 + WP-CLI shutdown notice; consolidate `idea/context`.
 
 ## 🧪 T — QA cuối
 

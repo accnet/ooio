@@ -27,7 +27,7 @@ lệnh hạ tầng nhận từ Control Plane.
 ```
 WordPress Multisite + WooCommerce + MU Platform Plugin
 Shared Theme + Shared Plugins (đóng gói thành Distribution)
-HyperDB (routing) + MySQL Pool
+Database Router (routing) + MySQL Pool
 PHP-FPM + Redis Object Cache + Caddy/Nginx
 ```
 
@@ -62,7 +62,7 @@ MU Platform Plugin (Data Plane SDK)                  │
 WordPress Multisite + WooCommerce                    │
   │                                                  │
   ▼                                                  │
-HyperDB ──► MySQL Pool (Database A/B/C...) ◄─────────┘
+Database Router ──► MySQL Pool (Database A/B/C...) ◄─────────┘
 ```
 
 ## Nguyên tắc kết nối bắt buộc
@@ -79,7 +79,7 @@ HyperDB ──► MySQL Pool (Database A/B/C...) ◄─────────�
 
 ```
 Cluster HK-01
-├── Node-01: Go Agent, Caddy, PHP-FPM, Redis, WordPress, HyperDB
+├── Node-01: Go Agent, Caddy, PHP-FPM, Redis, WordPress, Database Router
 ├── Node-02: Go Agent, PHP-FPM, WordPress
 └── Database Pool: MySQL-A, MySQL-B, MySQL-C
 ```

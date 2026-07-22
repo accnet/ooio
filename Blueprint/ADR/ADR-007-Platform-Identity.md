@@ -9,12 +9,23 @@ Là điều kiện để `ADR-006` (database-per-store) sống được.
 
 Câu hỏi cốt lõi: **ai sở hữu user?**
 
-Mặc định của WordPress là `wp_users` — nhưng nếu đặt `wp_users` ở tầng Runtime Global thì:
-- Mọi JOIN nội dung ↔ user trở thành **cross-database JOIN**, và MySQL chỉ JOIN được
-  cross-database khi cùng server ⇒ vỡ khi store nằm khác pool (`AP-001`).
-- Restore một store phải **loại trừ** `wp_users`/`wp_usermeta` dùng chung — đúng giới hạn
-  mà `ADR-005` và module restore (C6) đang phải chịu.
-- Xoá store để lại rác ở bảng chung.
+Identity có hai tầng, với hai trách nhiệm khác nhau:
+
+| Tầng | Vai trò / dữ liệu | Phạm vi Runtime Identity |
+|---|---|---|
+| **Platform Identity** | **Source of truth**, PostgreSQL; giữ account, membership, role và ánh xạ tới Runtime | **Luôn dùng** |
+| **Runtime Identity** | Projection trong WordPress/MySQL | **Per-store** nếu Isolated; **GLOBAL** nếu Multisite |
+
+Vị trí Runtime Identity là hệ quả của topology, không phải nguyên lý của `AP-002`.
+Trong WordPress, `wp-includes/class-wpdb.php:324` định nghĩa `global_tables =
+['users', 'usermeta']` vô điều kiện. Do đó trong Multisite, `wp_users` và `wp_usermeta`
+luôn là bảng global. Khi đó:
+- JOIN nội dung ↔ user vẫn là JOIN trong cùng Runtime Global, nhưng không thể coi identity
+  là dữ liệu tự chứa của từng store.
+- Quyền của một site nằm trong `wp_usermeta` global với key như
+  `wp_2_capabilities`, nên identity **không bao giờ portable dưới Multisite**.
+- Restore hoặc clone riêng một site không thể mang theo đầy đủ identity của site đó; xoá
+  site cũng không đồng nghĩa xoá sạch user global.
 
 ## Quyết định
 
@@ -36,8 +47,8 @@ Platform Identity → Organization → Member → Role
 **Chiều ngược lại bị cấm**: WordPress **không bao giờ** là nguồn sự thật, không ghi ngược
 lên Platform.
 
-### 3. `wp_users` là projection **per-store**
-`wp_users`/`wp_usermeta` nằm **trong chính database của store**, không ở Runtime Global.
+### 3. Runtime Identity là projection của Platform
+Với topology **Isolated**, `wp_users`/`wp_usermeta` nằm **trong chính database của store**.
 Một người có nhiều store sẽ có **nhiều WP user id khác nhau**, Platform giữ bảng ánh xạ:
 ```
 John (platform account)
@@ -46,6 +57,11 @@ John (platform account)
 ```
 Đây đúng mô hình các nền tảng thương mại (Shopify): **identity thuộc platform, không thuộc
 store**.
+
+Với topology **Multisite**, WordPress đặt `wp_users`/`wp_usermeta` ở Runtime Global theo
+định nghĩa `global_tables` nêu trên. Đây là hệ quả vận hành của Multisite, không làm thay
+đổi source of truth ở Platform; đồng thời nó khiến identity không thể portable theo từng
+site.
 
 ### 4. Không JOIN, chỉ provision
 ```
@@ -56,10 +72,12 @@ store**.
 ## Lý do
 
 Quyết định này **giải ba vấn đề cùng lúc**:
-1. **Xoá bỏ cross-database JOIN** — JOIN nội dung ↔ user diễn ra trong cùng một database.
-2. **Restore-per-store trở nên sạch** — restore nguyên một database, không còn ngoại lệ
-   `wp_users` như hiện tại.
-3. **Xoá store sạch** — drop một database, không rác ở bảng chung.
+1. Với Isolated, **xoá bỏ cross-database JOIN** — JOIN nội dung ↔ user diễn ra trong cùng
+   một database.
+2. Với Isolated, **restore-per-store trở nên sạch** — restore nguyên một database, không
+   còn ngoại lệ `wp_users` dùng chung.
+3. Với Multisite, phải chấp nhận giới hạn portability và restore/clone do identity global;
+   không được mô tả Multisite là per-store identity.
 
 Đồng thời tách Platform khỏi schema WordPress: đổi cách WP lưu user không ảnh hưởng
 Control Plane.
@@ -75,8 +93,8 @@ Control Plane.
   type hiện có của Agent).
 - Khi thêm/xoá member ở Platform, phải phát Operation tới **mọi store** người đó có quyền
   — cần idempotent và chịu được retry.
-- `ADR-005`: store gần như tự chứa ⇒ giảm giá trị còn lại của Multisite (xem `ADR-006`
-  mục Hệ quả).
+- `ADR-005`: store gần như tự chứa trong Isolated; Multisite vẫn có Runtime Identity global
+  và vì vậy có giới hạn portability (xem `ADR-006` mục Hệ quả).
 
 ## Open question
 

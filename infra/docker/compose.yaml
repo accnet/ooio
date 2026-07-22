@@ -18,33 +18,33 @@
 name: ooio-runtime-test
 
 services:
-  mariadb:
-    image: mariadb:11.8
+  mysql:
+    image: mysql:8.4
     command:
       - --innodb-file-per-table=1
       - --innodb-buffer-pool-size=1G
       # Left at defaults ON PURPOSE. Spike #002 showed the store ceiling per node
       # is table_open_cache / hot tables per store; raising it here would hide the
       # very wall the spike exists to find. Override per-run to test a tuned node.
-      - --table-open-cache=${MARIADB_TABLE_OPEN_CACHE:-2000}
-      - --open-files-limit=${MARIADB_OPEN_FILES_LIMIT:-32768}
+      - --table-open-cache=${MYSQL_TABLE_OPEN_CACHE:-2000}
+      - --open-files-limit=${MYSQL_OPEN_FILES_LIMIT:-32768}
     environment:
-      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-rootpw}
-      MARIADB_DATABASE: ${WP_DB_NAME:-ooio_wp}
-      MARIADB_USER: ${WP_DB_USER:-ooio}
-      MARIADB_PASSWORD: ${WP_DB_PASSWORD:-ooiopw}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpw}
+      MYSQL_DATABASE: ${WP_DB_NAME:-ooio_wp}
+      MYSQL_USER: ${WP_DB_USER:-ooio}
+      MYSQL_PASSWORD: ${WP_DB_PASSWORD:-ooiopw}
     ulimits:
       # Raising table_open_cache without raising the process fd limit just moves
-      # the wall to the OS instead of MariaDB — Spike #002, section on limits.
+      # the wall to the OS instead of MySQL — Spike #002, section on limits.
       nofile:
         soft: 1048576
         hard: 1048576
     volumes:
-      - mariadb-data:/var/lib/mysql
+      - mysql-data:/var/lib/mysql
     ports:
-      - "${MARIADB_PORT:-3310}:3306"
+      - "${MYSQL_PORT:-3310}:3306"
     healthcheck:
-      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p\"$${MYSQL_ROOT_PASSWORD}\" --silent"]
       interval: 5s
       timeout: 5s
       retries: 30
@@ -66,10 +66,10 @@ services:
     # way in the native dev env.
     image: wordpress:php8.3-fpm
     depends_on:
-      mariadb:
+      mysql:
         condition: service_healthy
     environment:
-      WORDPRESS_DB_HOST: mariadb:3306
+      WORDPRESS_DB_HOST: mysql:3306
       WORDPRESS_DB_NAME: ${WP_DB_NAME:-ooio_wp}
       WORDPRESS_DB_USER: ${WP_DB_USER:-ooio}
       WORDPRESS_DB_PASSWORD: ${WP_DB_PASSWORD:-ooiopw}
@@ -95,5 +95,5 @@ services:
       - wordpress-data:/var/www/html:ro
 
 volumes:
-  mariadb-data:
+  mysql-data:
   wordpress-data:

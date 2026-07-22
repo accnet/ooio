@@ -31,10 +31,10 @@ Production.
 | Mã | Việc | Phụ thuộc | Gate | Xong khi |
 |---|---|---|---|---|
 | A1 | **Spike script** WP-CLI tạo N site rỗng trên 1 VPS | P0-1 | **G1** | Tạo được 1000 site, có log số liệu |
-| A2 | **Spike Report #001** — đo provisioning time, `wp_blogs`, HyperDB routing | A1 | **G1** | Báo cáo có số liệu → quyết ADR-005 |
+| A2 | **Spike Report #001** — đo provisioning time, `wp_blogs`, Database Router routing | A1 | **G1** | Báo cáo có số liệu → quyết ADR-005 |
 | A3 | Distribution builder (bundle WP+Woo+theme+plugin+config+manifest, checksum, push Object Storage) | P0-4 | — | Build ra 1 artifact versioned, tải về được |
 | A4 | Chốt Core Plugin Set + **plugin compatibility matrix** trên Multisite | A3 | G3 | Ma trận v1: mọi plugin network-activate OK |
-| A5 | HyperDB config + chiến lược cấp phát DB pool (DB-before-site) | A1 | — | Routing + mapping store→pool chạy |
+| A5 | Database Router config + chiến lược cấp phát DB pool (DB-before-site) | A1 | — | Routing + mapping store→pool chạy |
 | A6 | Base config (default/performance/security) | A3 | — | 3 profile config áp được lên site |
 
 ## B — MU Plugin (Data Plane SDK)
@@ -56,7 +56,7 @@ Production.
 | C2 | Heartbeat + self-registration + Node Manifest | C1, F0 | — | Agent tự đăng ký, gửi capability/version |
 | C3 | Job Runner (poll job table/BullMQ, pull model) | C1, F0 | — | Nhận & thực thi job pending |
 | C4 | WordPress Adapter client (gọi MU Plugin localhost) | C1, B1 | G2 | Agent gọi được `/platform/v1/*` |
-| C5 | Database module (CREATE DB, HyperDB mapping) — DB-before-site | C1, A5 | G2 | Cấp DB + mapping trước khi tạo site |
+| C5 | Database module (CREATE DB, Database Router mapping) — DB-before-site | C1, A5 | G2 | Cấp DB + mapping trước khi tạo site |
 | C6 | SSL module (ACME/Let's Encrypt + reload Caddy) | C1 | G2 | Cấp + cài SSL cho 1 domain |
 | C7 | Backup module (DB + file → Object Storage) | C1, A3 | G2 | Backup 1 store, restore lại được |
 | C8 | **Restore-per-store** từ DB chung (lọc prefix + xử lý users) | C7 | **G2** | **Restore Test Report** — không ảnh hưởng store khác |
@@ -78,7 +78,7 @@ Production.
 |---|---|---|---|---|
 | E1 | Load harness 100→500→1000→3000 site | D1 | G3 | Sinh tải lặp lại được |
 | E2 | **Isolation benchmark** noisy-neighbor, 2 chế độ (baseline vs 4 lớp bảo vệ) — ADR-005 | E1, C9 | G3 | Chứng minh chiến lược giảm thiểu bằng số liệu |
-| E3 | Vòng lặp tìm & sửa bottleneck (PHP worker, HyperDB, Redis, Action Scheduler, cron) | E1 | G3 | Biết giới hạn thật 1 cluster |
+| E3 | Vòng lặp tìm & sửa bottleneck (PHP worker, Database Router, Redis, Action Scheduler, cron) | E1 | G3 | Biết giới hạn thật 1 cluster |
 | E4 | **Stress Test Report** + chốt ADR-005 (Accepted/Superseded) | E2, E3, A4, C8 | **G3** | Đủ Evidence đóng ADR-005 |
 
 ## F — API Contract freeze (Gate 3, sau E)

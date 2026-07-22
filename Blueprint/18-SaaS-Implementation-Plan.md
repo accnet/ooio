@@ -1,7 +1,7 @@
 # 18 · SaaS Control Plane — Implementation Plan
 
 > **Phạm vi: 100% Control Plane (SaaS Platform).** Tài liệu này trả lời *"làm thế nào xây
-> SaaS quản lý WooCommerce Cloud Platform"*. Runtime/WordPress, HyperDB, Go Agent,
+> SaaS quản lý WooCommerce Cloud Platform"*. Runtime/WordPress, Database Router, Go Agent,
 > Distribution **không** mô tả chi tiết ở đây — xem `19-Runtime-Implementation.md`,
 > `20-Platform-Services.md`. Ranh giới giữa SaaS và Runtime là **API Contract v1**
 > (`docs/api/*.openapi.yaml`, đã đóng băng).
@@ -22,7 +22,7 @@ Xây **Control Plane** điều phối toàn bộ platform: quản lý người d
 vòng đời cửa hàng, workflow/vận hành, phân phối Distribution, và giám sát cluster — trên
 nền Runtime WordPress đã có. **Trong phạm vi:** NestJS API, Dashboard, Worker, Workflow,
 Scheduler, Cluster Registry, Billing, Marketplace, Analytics, Audit, Notifications.
-**Ngoài phạm vi (tài liệu khác):** nội bộ WordPress/MU Plugin, HyperDB, Agent, Distribution
+**Ngoài phạm vi (tài liệu khác):** nội bộ WordPress/MU Plugin, Database Router, Agent, Distribution
 build. **Mục tiêu quy mô:** vài trăm → vài nghìn store; Control Plane độc lập hoàn toàn với
 Runtime để sau này cắm thêm runtime khác (Magento/headless) mà không đổi SaaS.
 
@@ -101,9 +101,9 @@ Step lỗi (vd xoá blog, giải phóng DB). SaaS enqueue Operation vào BullMQ 
 (`GET /v1/agents/{id}/jobs`) → thực thi → `POST .../result` (202) cập nhật Operation.
 
 ## 9. Scheduler (Placement)
-Khi tạo store, Scheduler chọn **Cluster → Database Pool → Distribution → Capability**, không
-random. HyperDB **không tự chọn pool** — Scheduler quyết định, Agent đồng bộ mapping,
-HyperDB chỉ route. Tiêu chí capacity score: region, CPU/RAM/disk, PHP workers, DB pool load,
+Khi tạo store, DAS chọn **Cluster → Database Pool → Distribution → Capability**, không
+random. Database Router **không tự chọn pool** — DAS quyết định, Agent đồng bộ mapping,
+Database Router chỉ route. Tiêu chí capacity score: region, CPU/RAM/disk, PHP workers, DB pool load,
 Redis, plan, capabilities, version, cost. **Ngưỡng capacity là config** — nạp số thật sau
 Gate 1 spike, không hardcode.
 
@@ -212,6 +212,6 @@ Users → Cloudflare → React Dashboard (SPA)
         ══════════════════════════════════════  ◄ API Contract v1 (đóng băng)
                      Go Agent (Node)
                          │  WordPress Adapter → MU Platform Plugin
-                   WordPress Multisite → HyperDB → MySQL Primary/Replica Pools
+                   WordPress Multisite → Database Router → MySQL Primary/Replica Pools
 ```
 Control Plane hoàn toàn độc lập Runtime; WordPress chỉ là Execution Engine.

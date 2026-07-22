@@ -25,7 +25,7 @@ jobrunner   Vòng lặp poll→Handle(job)→report; ctx-cancellable; Handler = 
 provision   Handler dispatch job type; CreateStore orchestration (createstore.go) + rollback
 wpclient    HTTP impl WordPressClient → MU Plugin /platform/v1 (bearer, /wp-json base)
 wpadapter   Interface Execute(Operation) — transport/topology-neutral (ADR-003/005)
-database    Cấp DB (DB-before-site) + sinh HyperDB routing config (Allocator interface)
+database    Cấp DB (DB-before-site) + sinh Database Router config (Allocator interface)
 ssl         Issue/Renew qua Issuer(ACME)+Reloader(Caddy admin :2019) interface
 backup      Dump + Storage interface, sha256
 restore     Full + restore-per-store (prefix wp_{id}_, bỏ shared users — ADR-005)
@@ -48,8 +48,8 @@ rollback ngược, không để trạng thái nửa vời.
 
 ## 4. Node bring-up — install-node.sh (one-shot)
 `--system` (VPS, root) hoặc `--prefix` (không sudo). Dựng: deps + MariaDB + WordPress
-multisite + MU Plugin + **Redis** (object cache) + **HyperDB** (drop-in + db-config ở
-ABSPATH) + **Core Plugin Set/WooCommerce** (install-plugins.sh) + php-fpm + Caddy + Agent
+multisite + MU Plugin + **Redis** (object cache) + **LudicrousDB** (Database Router
+drop-in + db-config ở ABSPATH) + **Core Plugin Set/WooCommerce** (install-plugins.sh) + php-fpm + Caddy + Agent
 (systemd). Idempotent, có `--dry-run`. Config qua `node-config.env` (mẫu + `DEPLOY.md`).
 > Chưa chạy `--system` thật trên VPS lần nào — cần một lần để đóng dry-run→real.
 

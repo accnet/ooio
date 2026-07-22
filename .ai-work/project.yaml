@@ -18,8 +18,13 @@ workflow:
 # `cwd` is relative to the project root. Empty values mean that this project
 # has not declared that check yet.
 verification:
-  cwd:
-  test_command:
-  typecheck_command:
-  build_command:
+  # Repo đa ngôn ngữ (NestJS API + Go Agent + 3 Vite SPA) nhưng ở đây chỉ có MỘT
+  # `cwd`, nên các lệnh đi qua scripts/verify.sh để phủ hết. Xem script để biết
+  # cái gì được chạy và cái gì bị bỏ qua có chủ đích.
+  cwd: .
+  test_command: ./scripts/verify.sh test
+  typecheck_command: ./scripts/verify.sh typecheck
+  build_command: ./scripts/verify.sh build
+  # lint_command để trống: repo chưa có cấu hình lint. Khai một lệnh không tồn
+  # tại sẽ làm gate trượt MỌI task — tệ hơn là không khai.
   lint_command:

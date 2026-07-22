@@ -5,7 +5,7 @@
 > **không biết** SaaS/Billing/User — chỉ expose Platform API qua MU Plugin. Nội bộ Go Agent
 > và build Distribution xem `20`.
 >
-> Tài liệu này gom chi tiết từ `04-Runtime`, `05-HyperDB`, `07-MU-Plugin` + kết quả đã kiểm
+> Tài liệu này gom chi tiết từ `04-Runtime`, `05-Database-Router`, `07-MU-Plugin` + kết quả đã kiểm
 > chứng chạy thật (Gate 2 local). Đã build + test: MU Plugin 8 endpoint, LudicrousDB routing, serving
 > stack, provisioning-completeness (B4), restore-per-store.
 
@@ -13,7 +13,8 @@
 ```
 Caddy (:80/:443)  →  PHP-FPM  →  WordPress Multisite  →  WooCommerce
                                         │
-                              LudicrousDB (routing only)
+                              Database Router
+                              (LudicrousDB implementation)
                                         │
                                    MySQL Pool (primary/replica)
    Redis (object cache)   ·   MU Platform Plugin   ·   Go Agent (native/systemd)
@@ -59,26 +60,36 @@ ngay, không thao tác tay):
 2. Sau `wpmu_create_blog`: `switch_to_blog → flush_rewrite_rules(true) →
    update_option('blog_public',1) → restore_current_blog` (mỗi call guard `function_exists`).
 
-## 6. Database routing — LudicrousDB (thay HyperDB)
+## 6. Database Router — interface và implementation LudicrousDB
 
-> **HyperDB KHÔNG dùng được**: không còn bảo trì, fatal trên WP 6.4+/7.0 + WooCommerce
-> (require `wp-db.php` deprecated → `wp_kses()` undefined; `$wpdb->dbh` null → Action
-> Scheduler `db_server_info()` chết → wp-admin trắng). Dùng **LudicrousDB** — fork được
-> bảo trì, **cùng API `add_database()`**, đã kiểm chứng: `db_server_info()` → `11.8.8-MariaDB`,
-> Action Scheduler OK, wp-admin OK, WooCommerce CLI OK.
+> **Bằng chứng lịch sử:** HyperDB KHÔNG dùng được: không còn bảo trì, fatal trên WP 6.4+/7.0
+> + WooCommerce (require `wp-db.php` deprecated → `wp_kses()` undefined; `$wpdb->dbh` null
+> → Action Scheduler `db_server_info()` chết → wp-admin trắng). Đây là lý do implementation
+> hiện tại dùng LudicrousDB; cảnh báo lịch sử này phải được giữ lại.
+
+Runtime contract là `blog_id → pool đã được DAS chọn → connection`. DAS quyết định store
+thuộc pool nào; Agent đồng bộ mapping; Database Router chỉ thực thi kết nối tới pool đó.
+Router không tạo database, không chọn pool, và không quản lý migration; migration thuộc
+Workflow + Agent.
+
+Dùng **LudicrousDB** — fork được bảo trì, **một implementation** của Database Router, có
+API `add_database()` tương thích. Đã kiểm chứng: `db_server_info()` → `11.8.8-MariaDB`,
+Action Scheduler OK, wp-admin OK, WooCommerce CLI OK.
 
 Cài đặt: gói LudicrousDB vào `wp-content/plugins/ludicrousdb/`, drop-in
 `ludicrousdb/drop-ins/db.php` → `wp-content/db.php`, config `db-config.php` ở **ABSPATH**
 (LudicrousDB cũng chấp nhận `wp-content/` hoặc hằng `DB_CONFIG_FILE`). `install-node.sh`
 tự động hoá toàn bộ.
 
-Vai trò kiến trúc **không đổi** — drop-in chỉ **route**, không tự chọn pool:
+Vai trò kiến trúc **không đổi** — Database Router chỉ **route**, không tự chọn pool:
 ```
-Scheduler (SaaS) chọn Pool  →  Agent sync mapping (blog_id → pool)  →  drop-in chỉ route
+DAS chọn Pool  →  Agent sync mapping (blog_id → pool)  →  Database Router chỉ route
 ```
-- **Single-pool** (hiện tại): một `add_database()` dataset `global` read+write.
-- **Multi-pool** (H1): thêm `add_database()` partition theo dataset; không sửa code WordPress.
-  Agent cấp DB *trước* khi tạo site (DB-before-site).
+- **H0 hiện tại:** `db-config.php` chỉ có **một** `add_database()` dataset `global`
+  read+write trỏ tới một database duy nhất; không có `add_callback`; runtime dùng đúng một
+  database và chưa có định tuyến store → nhiều pool.
+- **Multi-pool (H1):** khi được DAS quyết định và triển khai, thêm `add_database()` partition
+  theo dataset; không sửa code WordPress. Agent cấp DB *trước* khi tạo site (DB-before-site).
 
 ## 7. Redis Object Cache
 Redis Object Cache drop-in (`wp redis enable`), `WP_REDIS_HOST/PORT` + `WP_CACHE`. Giảm tải

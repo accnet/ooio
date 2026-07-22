@@ -20,7 +20,7 @@ mới là sản phẩm.
 - **Management Plane (Go Agent)** — chạy native (systemd, không Docker) trên từng node
   của Runtime Cluster. Nhận Operation từ Control Plane, thực thi hạ tầng: provision,
   backup/restore, SSL, deploy, metrics. Không chứa business logic.
-- **Runtime Plane (Data Plane)** — WordPress Multisite + WooCommerce + HyperDB + MySQL
+- **Runtime Plane (Data Plane)** — WordPress Multisite + WooCommerce + Database Router + MySQL
   Pool, đóng gói thành **Distribution** (artifact có version). Đây là nơi website
   khách hàng thực sự chạy.
 
@@ -31,7 +31,7 @@ Core API.
 ## Roadmap ưu tiên: Runtime-first
 
 Quyết định kiến trúc quan trọng nhất (xem ADR-001): **xây Runtime trước, SaaS sau**,
-vì phần rủi ro kỹ thuật lớn nhất nằm ở WordPress Runtime (multisite, HyperDB, PHP-FPM,
+vì phần rủi ro kỹ thuật lớn nhất nằm ở WordPress Runtime (multisite, Database Router, PHP-FPM,
 WooCommerce ở quy mô hàng trăm–hàng nghìn store), không phải ở NestJS.
 
 Thứ tự 11 phase (chi tiết ở `13-Roadmap.md`):

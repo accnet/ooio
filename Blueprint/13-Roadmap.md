@@ -9,7 +9,7 @@ chiếu triển khai). Roadmap dưới đây theo đúng thứ tự và nội du
 `plan-12.md` (nguồn thẩm quyền).
 
 Lý do đảo ngược thứ tự "SaaS trước, Runtime sau" thường thấy: 90% rủi ro kỹ thuật nằm
-ở WordPress Runtime (multisite, HyperDB, PHP-FPM, WooCommerce ở quy mô lớn), không
+ở WordPress Runtime (multisite, Database Router, PHP-FPM, WooCommerce ở quy mô lớn), không
 phải ở NestJS. Xây Runtime trước giúp de-risk sớm và đóng băng API Contract trước khi
 đầu tư vào Control Plane.
 
@@ -22,7 +22,7 @@ phải ở NestJS. Xây Runtime trước giúp de-risk sớm và đóng băng AP
 | 2 | **MU Plugin** | API nội bộ ổn định: Create/Delete Site, Plugin, Theme, Settings, User, Health. Không UI, không Billing, không business logic | 2–3 tuần |
 | 3 | **Go Agent** | Heartbeat, Workflow Runner, WordPress Adapter, SSL, Backup, Restore, Metrics, Deploy. Có REST API, test bằng Postman — chưa cần NestJS | 3–4 tuần |
 | 4 | **Provisioning** | Hoàn thiện workflow tạo store end-to-end (Allocate DB → Create Site → Theme/Plugin → Domain → SSL → Verify → Ready). Runtime đã vận hành độc lập | 2–3 tuần |
-| 5 | **Stress Test** | Test thật với 100 → 300 → 500 → 1000 site. Đo PHP Workers, Redis hit rate, MySQL latency, HyperDB routing, WooCommerce checkout, Action Scheduler, Cron, Backup, SSL, Media upload. Mục tiêu: xác định giới hạn thật của 1 Cluster | 4–8 tuần |
+| 5 | **Stress Test** | Test thật với 100 → 300 → 500 → 1000 site. Đo PHP Workers, Redis hit rate, MySQL latency, Database Router routing, WooCommerce checkout, Action Scheduler, Cron, Backup, SSL, Media upload. Mục tiêu: xác định giới hạn thật của 1 Cluster | 4–8 tuần |
 | 6 | **Multi Cluster** | Cluster Registry, Agent Registration, Health Report, Cluster Metadata (ban đầu có thể dùng file cấu hình hoặc PostgreSQL đơn giản) | 2–4 tuần |
 | 7 | **SaaS Core** | Bắt đầu xây Control Plane: Authentication, Organizations, Users, Roles, Plans, Billing, API Keys, Dashboard. Lúc này NestJS rất nhẹ vì chỉ gọi Agent API đã kiểm chứng | 4–6 tuần |
 | 8 | **Workflow (Engine)** | Mọi thao tác trở thành Operation có ID/Status/Progress/Logs/Retry/Rollback (Create Store, Delete, Backup, Restore, SSL, Deploy Plugin...) | 3–4 tuần |
