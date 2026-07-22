@@ -1,25 +1,32 @@
+// Customer portal API client.
+//
+// Request/token plumbing comes from packages/shared. Storage keys stay per-app:
+// shared keys would let a customer session and an operator or support session
+// overwrite each other if these apps ever share an origin.
+import { ApiError, AuthTokens, createApiClient } from '@ooio/shared';
+
+export { ApiError };
+export type { AuthTokens };
+
 export const ACCESS_TOKEN_KEY = 'woocloud.accessToken';
 export const REFRESH_TOKEN_KEY = 'woocloud.refreshToken';
 
-export interface ApiErrorShape {
-  message?: string | string[];
-  error?: string;
-  statusCode?: number;
+const client = createApiClient({
+  accessTokenKey: ACCESS_TOKEN_KEY,
+  refreshTokenKey: REFRESH_TOKEN_KEY,
+});
+
+export const saveTokens = client.saveTokens;
+export const clearTokens = client.clearTokens;
+export const hasToken = client.hasToken;
+const request = client.request;
+
+export function organizationIdFromToken(): string | null {
+  return client.claimFromToken<string>('organizationId');
 }
 
-export class ApiError extends Error {
-  readonly status: number;
-
-  constructor(message: string, status: number) {
-    super(message);
-    this.name = 'ApiError';
-    this.status = status;
-  }
-}
-
-export interface AuthTokens {
-  accessToken: string;
-  refreshToken: string;
+export function emailFromToken(): string | null {
+  return client.claimFromToken<string>('email');
 }
 
 export interface Store {
@@ -144,77 +151,6 @@ export interface StoreAnalytics {
   to: string;
   totals: Record<string, number>;
   growth: AnalyticsGrowthPoint[];
-}
-
-function getToken(): string | null {
-  return localStorage.getItem(ACCESS_TOKEN_KEY);
-}
-
-export function saveTokens(tokens: AuthTokens): void {
-  localStorage.setItem(ACCESS_TOKEN_KEY, tokens.accessToken);
-  localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refreshToken);
-}
-
-export function clearTokens(): void {
-  localStorage.removeItem(ACCESS_TOKEN_KEY);
-  localStorage.removeItem(REFRESH_TOKEN_KEY);
-}
-
-export function hasToken(): boolean {
-  return Boolean(getToken());
-}
-
-function claimFromToken<T>(claim: string): T | null {
-  const token = getToken();
-  if (!token) return null;
-
-  try {
-    const payload = token.split('.')[1];
-    const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
-    const decoded = JSON.parse(
-      window.atob(normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=')),
-    ) as Record<string, unknown>;
-    return (decoded[claim] as T) ?? null;
-  } catch {
-    return null;
-  }
-}
-
-export function organizationIdFromToken(): string | null {
-  return claimFromToken<string>('organizationId');
-}
-
-export function emailFromToken(): string | null {
-  return claimFromToken<string>('email');
-}
-
-function errorMessage(body: unknown, fallback: string): string {
-  if (!body || typeof body !== 'object') return fallback;
-  const data = body as ApiErrorShape;
-  if (Array.isArray(data.message)) return data.message.join(', ');
-  return data.message || data.error || fallback;
-}
-
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const headers = new Headers(options.headers);
-  headers.set('Accept', 'application/json');
-  if (options.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
-  const token = getToken();
-  if (token) headers.set('Authorization', `Bearer ${token}`);
-
-  const response = await fetch(`/api${path}`, { ...options, headers });
-  const contentType = response.headers.get('content-type') || '';
-  const body: unknown = contentType.includes('json') ? await response.json() : await response.text();
-
-  if (!response.ok) {
-    if (response.status === 401) {
-      clearTokens();
-      window.dispatchEvent(new Event('auth-expired'));
-    }
-    throw new ApiError(errorMessage(body, `Request failed (${response.status})`), response.status);
-  }
-
-  return body as T;
 }
 
 export function login(email: string, password: string): Promise<AuthTokens> {

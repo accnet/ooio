@@ -43,14 +43,11 @@ Lịch sử vì sao có tầng này: trước đây `PATCH /pools/:id/status` ch
 | Feature flags | `GET /flags`, `PUT /flags/:key` | nút bật/tắt chỉ đặt **mặc định global**; thứ tự áp dụng org > plan > cluster > global |
 | Events | `GET /events` | operator xem mọi tổ chức; event không có `publishedAt` mà `attempts` tăng dần là đang kẹt |
 
-## Nợ kỹ thuật đã biết
+## Mã dùng chung
 
-`src/api.ts` **lặp lại** ~60 dòng request/token của `apps/web/src/api.ts`. Chưa trích
-xuất vì repo chưa có npm workspaces — dựng package dùng chung sẽ là thay đổi lớn hơn
-chính việc tách app. **Trích xuất sang `packages/shared` khi xuất hiện consumer thứ ba,
-hoặc ngay khi hai bản bắt đầu lệch nhau** — cái nào đến trước. Logic token lệch nhau
-giữa hai app là cách sinh ra lỗi phiên đăng nhập.
+Phần request/token nằm ở `packages/shared` (`@ooio/shared`). Trước đây `apps/web` và
+`apps/ops` mỗi bên giữ một bản sao; khi `apps/admin` xuất hiện là consumer thứ ba —
+đúng điểm kích hoạt đã ghi ở đây — thì phần đó được trích xuất.
 
-Khoá `localStorage` cố tình khác `apps/web` (`ooio.admin.*`): nếu hai app từng được
-phục vụ cùng origin, dùng chung khoá sẽ khiến phiên khách hàng và phiên operator đè
-lên nhau.
+Khoá `localStorage` **vẫn tách riêng** (`ooio.ops.*`): gộp code không được phép xoá mất
+sự tách biệt phiên đăng nhập giữa ba app. Xem `packages/shared/README.md`.
