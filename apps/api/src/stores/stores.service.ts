@@ -139,8 +139,8 @@ export class StoresService {
   async list(organizationId: string) {
     return this.prisma.store.findMany({
       where: { organizationId },
+      select: STORE_DETAIL_SELECT,
       orderBy: { createdAt: 'desc' },
-      include: { domains: true },
     });
   }
 

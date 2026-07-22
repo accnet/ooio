@@ -1,26 +1,31 @@
+// Support console API client.
+//
+// Request/token plumbing comes from packages/shared. Storage keys stay per-app:
+// shared keys would let a customer, operator or support session overwrite each
+// other if these apps ever share an origin.
+import { ApiError, AuthTokens, createApiClient } from '@ooio/shared';
+
+export { ApiError };
+export type { AuthTokens };
+
 export const ACCESS_TOKEN_KEY = 'ooio.support.accessToken';
 export const REFRESH_TOKEN_KEY = 'ooio.support.refreshToken';
 
-export class ApiError extends Error {
-  readonly status: number;
+const client = createApiClient({
+  accessTokenKey: ACCESS_TOKEN_KEY,
+  refreshTokenKey: REFRESH_TOKEN_KEY,
+});
 
-  constructor(message: string, status: number) {
-    super(message);
-    this.name = 'ApiError';
-    this.status = status;
-  }
-}
+export const saveTokens = client.saveTokens;
+export const clearTokens = client.clearTokens;
+export const hasToken = client.hasToken;
+const request = client.request;
 
 export class SupportRoleError extends Error {
   constructor() {
     super('This console is limited to support users. Your account does not have the support role.');
     this.name = 'SupportRoleError';
   }
-}
-
-export interface AuthTokens {
-  accessToken: string;
-  refreshToken: string;
 }
 
 export interface Plan {
@@ -85,70 +90,17 @@ export interface PageMeta {
 export type OrganizationPage = PageMeta & { organizations: Organization[] };
 export type StorePage = PageMeta & { stores: AdminStore[] };
 
-function getToken(): string | null {
-  return localStorage.getItem(ACCESS_TOKEN_KEY);
-}
-
-export function saveTokens(tokens: AuthTokens): void {
-  localStorage.setItem(ACCESS_TOKEN_KEY, tokens.accessToken);
-  localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refreshToken);
-}
-
-export function clearTokens(): void {
-  localStorage.removeItem(ACCESS_TOKEN_KEY);
-  localStorage.removeItem(REFRESH_TOKEN_KEY);
-}
-
-export function hasToken(): boolean {
-  return Boolean(getToken());
-}
-
+/**
+ * CONVENIENCE ONLY — the authorization decision is PlatformRoleGuard on the API.
+ * This just avoids rendering screens whose every request would return 403.
+ */
 export function platformRolesFromToken(): string[] {
-  const token = getToken();
-  if (!token) return [];
-  try {
-    const payload = token.split('.')[1];
-    const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
-    const decoded = JSON.parse(
-      window.atob(normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=')),
-    ) as { platformRoles?: unknown };
-    return Array.isArray(decoded.platformRoles)
-      ? decoded.platformRoles.filter((role): role is string => typeof role === 'string')
-      : [];
-  } catch {
-    return [];
-  }
+  const roles = client.claimFromToken<unknown>('platformRoles');
+  return Array.isArray(roles) ? roles.filter((role): role is string => typeof role === 'string') : [];
 }
 
 export function isSupport(): boolean {
   return platformRolesFromToken().includes('support');
-}
-
-function errorMessage(body: unknown, fallback: string): string {
-  if (!body || typeof body !== 'object') return fallback;
-  const data = body as { message?: string | string[]; error?: string };
-  if (Array.isArray(data.message)) return data.message.join(', ');
-  return data.message || data.error || fallback;
-}
-
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const headers = new Headers(options.headers);
-  headers.set('Accept', 'application/json');
-  if (options.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
-  const token = getToken();
-  if (token) headers.set('Authorization', `Bearer ${token}`);
-
-  const response = await fetch(`/api${path}`, { ...options, headers });
-  const contentType = response.headers.get('content-type') || '';
-  const body: unknown = contentType.includes('json') ? await response.json() : await response.text();
-  if (!response.ok) {
-    if (response.status === 401) {
-      clearTokens();
-      window.dispatchEvent(new Event('auth-expired'));
-    }
-    throw new ApiError(errorMessage(body, `Request failed (${response.status})`), response.status);
-  }
-  return body as T;
 }
 
 export async function login(email: string, password: string): Promise<AuthTokens> {

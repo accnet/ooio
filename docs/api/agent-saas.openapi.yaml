@@ -281,9 +281,22 @@ components:
         status:
           type: string
           enum: [succeeded, failed]
-        result: {}
+        result:
+          description: Successful create-store jobs return the WordPress blog ID; other job types may omit this field or return an implementation-defined JSON value.
+          oneOf:
+            - $ref: '#/components/schemas/CreateStoreResult'
+            - type: object
+              additionalProperties: true
         error:
           $ref: '#/components/schemas/JobError'
+    CreateStoreResult:
+      type: object
+      required: [blogId]
+      properties:
+        blogId:
+          type: integer
+          format: int64
+          minimum: 1
     JobError:
       type: object
       required: [code, message]

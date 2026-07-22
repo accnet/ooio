@@ -2,6 +2,7 @@ package jobrunner
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"time"
@@ -10,7 +11,7 @@ import (
 // Handler is the seam for track-specific job execution. The runner only
 // coordinates lifecycle and reporting; it does not interpret job payloads.
 type Handler interface {
-	Handle(context.Context, Job) error
+	Handle(context.Context, Job) (json.RawMessage, error)
 }
 
 type JobClient interface {
@@ -82,8 +83,9 @@ func (r *Runner) pollAndHandle(ctx context.Context) error {
 			return err
 		}
 
-		result := JobResult{Status: JobResultSucceeded}
-		if err := r.handler.Handle(ctx, job); err != nil {
+		resultPayload, err := r.handler.Handle(ctx, job)
+		result := JobResult{Status: JobResultSucceeded, Result: resultPayload}
+		if err != nil {
 			result = JobResult{
 				Status: JobResultFailed,
 				Error: &JobError{
@@ -122,4 +124,4 @@ func wait(ctx context.Context, delay time.Duration) error {
 
 type NopHandler struct{}
 
-func (NopHandler) Handle(context.Context, Job) error { return nil }
+func (NopHandler) Handle(context.Context, Job) (json.RawMessage, error) { return nil, nil }

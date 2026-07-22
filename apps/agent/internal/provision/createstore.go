@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/accnet/ooio/apps/agent/internal/database"
@@ -46,6 +47,7 @@ type StoreContext struct {
 	Request    StoreRequest
 	Allocation database.Allocation
 	Created    bool
+	Result     json.RawMessage
 }
 
 // DatabaseAllocator is the database-before-site seam used by the first step.
@@ -99,49 +101,49 @@ func (o *CreateStoreOrchestrator) Steps() []CreateStoreStep {
 
 // CreateStore executes every step and compensates completed steps in reverse
 // order when any forward operation fails.
-func (o *CreateStoreOrchestrator) CreateStore(ctx context.Context, payload json.RawMessage) error {
+func (o *CreateStoreOrchestrator) CreateStore(ctx context.Context, payload json.RawMessage) (json.RawMessage, error) {
 	if o == nil {
-		return fmt.Errorf("create store orchestrator is not configured")
+		return nil, fmt.Errorf("create store orchestrator is not configured")
 	}
 	if ctx == nil {
-		return fmt.Errorf("create store requires a context")
+		return nil, fmt.Errorf("create store requires a context")
 	}
 	if err := ctx.Err(); err != nil {
-		return err
+		return nil, err
 	}
 	request, err := parseStoreRequest(payload)
 	if err != nil {
-		return fmt.Errorf("create store payload: %w", err)
+		return nil, fmt.Errorf("create store payload: %w", err)
 	}
 	state := &StoreContext{Payload: append(json.RawMessage(nil), payload...), Request: request}
 
 	completed := make([]CreateStoreStep, 0, len(o.steps))
 	for _, step := range o.steps {
 		if strings.TrimSpace(step.Name) == "" {
-			return fmt.Errorf("create store step has no name")
+			return nil, fmt.Errorf("create store step has no name")
 		}
 		if step.Execute == nil {
-			return fmt.Errorf("create store step %q has no execute function", step.Name)
+			return nil, fmt.Errorf("create store step %q has no execute function", step.Name)
 		}
 		if step.Rollback == nil {
-			return fmt.Errorf("create store step %q has no rollback function", step.Name)
+			return nil, fmt.Errorf("create store step %q has no rollback function", step.Name)
 		}
 		if err := step.Execute(ctx, state); err != nil {
 			failure := fmt.Errorf("create store step %q failed: %w", step.Name, err)
 			rollbackErrs := rollbackCompleted(context.WithoutCancel(ctx), completed, state)
 			if len(rollbackErrs) != 0 {
-				return fmt.Errorf("%w; rollback errors: %w", failure, errors.Join(rollbackErrs...))
+				return nil, fmt.Errorf("%w; rollback errors: %w", failure, errors.Join(rollbackErrs...))
 			}
-			return failure
+			return nil, failure
 		}
 		completed = append(completed, step)
 	}
-	return nil
+	return state.Result, nil
 }
 
 // Run is an alias that makes the orchestrator usable as a conventional
 // command-style component without duplicating lifecycle logic.
-func (o *CreateStoreOrchestrator) Run(ctx context.Context, payload json.RawMessage) error {
+func (o *CreateStoreOrchestrator) Run(ctx context.Context, payload json.RawMessage) (json.RawMessage, error) {
 	return o.CreateStore(ctx, payload)
 }
 
@@ -184,9 +186,12 @@ func createStoreSteps(dependencies CreateStoreDependencies) []CreateStoreStep {
 					return fmt.Errorf("create site: %w", err)
 				}
 				state.Created = true
-				if siteID := responseSiteID(result.Payload); siteID != "" {
-					state.Request.SiteID = siteID
+				blogID, err := responseBlogID(result.Payload)
+				if err != nil {
+					return err
 				}
+				state.Request.SiteID = strconv.FormatInt(blogID, 10)
+				state.Result = json.RawMessage(fmt.Sprintf(`{"blogId":%d}`, blogID))
 				return nil
 			},
 			Rollback: func(ctx context.Context, state *StoreContext) error {
@@ -282,16 +287,32 @@ func parseStoreRequest(payload json.RawMessage) (StoreRequest, error) {
 	return request, nil
 }
 
-func responseSiteID(payload []byte) string {
+// The MU plugin returns the new blog as `siteId`, and as a STRING — see
+// runtime/mu-plugin Rest/Controller.php and every other siteId field in this
+// agent. The value reported onward to the Control Plane is named `blogId`
+// because that is the column it lands in; only the wire name differs.
+//
+// Refusing a non-positive value is deliberate: a wrong blog id is worse than a
+// missing one, because the Control Plane would publish a mapping pointing at
+// the wrong blog.
+func responseBlogID(payload []byte) (int64, error) {
 	var response struct {
 		SiteID string `json:"siteId"`
-		ID     string `json:"id"`
 	}
-	if json.Unmarshal(payload, &response) != nil {
-		return ""
+	if err := json.Unmarshal(payload, &response); err != nil {
+		return 0, fmt.Errorf("create site response is not valid JSON: %w", err)
 	}
-	if siteID := strings.TrimSpace(response.SiteID); siteID != "" {
-		return siteID
+	blogID, err := strconv.ParseInt(strings.TrimSpace(response.SiteID), 10, 64)
+	if err != nil || blogID <= 0 {
+		return 0, fmt.Errorf("create site response must contain a positive integer siteId, got %q", response.SiteID)
 	}
-	return strings.TrimSpace(response.ID)
+	return blogID, nil
+}
+
+func createStoreResult(payload []byte) (json.RawMessage, error) {
+	blogID, err := responseBlogID(payload)
+	if err != nil {
+		return nil, err
+	}
+	return json.RawMessage(fmt.Sprintf(`{"blogId":%d}`, blogID)), nil
 }

@@ -34,12 +34,12 @@ type fakeHandler struct {
 	jobs []Job
 }
 
-func (h *fakeHandler) Handle(_ context.Context, job Job) error {
+func (h *fakeHandler) Handle(_ context.Context, job Job) (json.RawMessage, error) {
 	h.jobs = append(h.jobs, job)
 	if job.ID == "job-fail" {
-		return errors.New("provisioning unavailable")
+		return nil, errors.New("provisioning unavailable")
 	}
-	return nil
+	return json.RawMessage(`{"blogId":7}`), nil
 }
 
 func TestClientPollAndReportUsesAgentSaaSContract(t *testing.T) {
@@ -114,6 +114,13 @@ func TestRunnerHandlesJobsAndReportsPassOrFail(t *testing.T) {
 	}
 	if failed.Status != JobResultFailed || failed.Error == nil || failed.Error.Code != "handler_error" {
 		t.Fatalf("failed result = %#v", failed)
+	}
+	var succeeded JobResult
+	if err := json.Unmarshal(fake.requests[1].Body, &succeeded); err != nil {
+		t.Fatalf("decode successful result: %v", err)
+	}
+	if succeeded.Status != JobResultSucceeded || string(succeeded.Result) != `{"blogId":7}` {
+		t.Fatalf("successful result = %#v", succeeded)
 	}
 }
 

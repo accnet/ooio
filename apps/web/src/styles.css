@@ -165,12 +165,30 @@ h3 { font-size: 15px; }
 .public-footer { align-items: center; border-top: 1px solid #dce5df; color: #6d7d77; display: flex; font-size: 11px; justify-content: space-between; padding: 22px 0 30px; }
 .public-footer a { color: #526a62; font-weight: 720; text-decoration: none; }
 .public-footer a:hover { color: #18221f; }
+.public-footer-links { align-items: center; display: flex; flex-wrap: wrap; gap: 18px; }
 .pricing-intro { max-width: 700px; padding: 80px 0 48px; }
 .pricing-intro h1 { font-size: clamp(38px, 5vw, 64px); }
 .pricing-intro .landing-lede { font-size: 16px; margin-top: 20px; }
 .public-plan-grid { padding-bottom: 78px; }
 .public-plan-grid .plan-card { min-height: 280px; }
 .public-plan-grid .button { align-items: center; display: inline-flex; justify-content: center; text-decoration: none; }
+.public-page-intro { max-width: 760px; padding: 80px 0 52px; }
+.public-page-intro h1 { font-size: clamp(38px, 5vw, 64px); line-height: 1.02; max-width: 760px; }
+.public-page-intro .landing-lede { font-size: 16px; margin-top: 20px; }
+.feature-grid { display: grid; gap: 18px; grid-template-columns: repeat(2, minmax(0, 1fr)); padding-bottom: 28px; }
+.feature-card { min-height: 220px; }
+.feature-card h2 { font-size: 22px; line-height: 1.2; max-width: 360px; }
+.feature-card .muted { max-width: 460px; }
+.public-callout { align-items: center; display: flex; gap: 24px; justify-content: space-between; margin-bottom: 76px; }
+.public-callout h2 { margin: 0; }
+.public-callout .landing-actions { margin-top: 0; }
+.contact-intro { padding-bottom: 45px; }
+.contact-layout { display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); padding-bottom: 76px; }
+.contact-card { min-height: 285px; }
+.contact-card h2 { font-size: 26px; max-width: 400px; }
+.contact-card .button { align-items: center; display: inline-flex; margin-top: 18px; text-decoration: none; }
+.contact-note { color: #6d7d77; font-size: 11px; line-height: 1.55; margin: 16px 0 0; max-width: 400px; }
+.contact-next .landing-actions { margin-top: 24px; }
 
 /* API key settings */
 .organization-summary { align-items: center; display: flex; justify-content: space-between; }
@@ -212,6 +230,8 @@ h3 { font-size: 15px; }
   .login-panel { padding: 38px 24px 60px; }
   .landing-hero { min-height: auto; padding-top: 44px; }
   .landing-proof { grid-template-columns: 1fr; }
+  .feature-grid, .contact-layout { grid-template-columns: 1fr; }
+  .public-callout { align-items: flex-start; flex-direction: column; }
 }
 
 @media (max-width: 480px) {
@@ -229,6 +249,7 @@ h3 { font-size: 15px; }
   .landing-visual-header { align-items: flex-start; flex-direction: column; gap: 10px; }
   .landing-metric-grid strong { font-size: 24px; }
   .public-footer { align-items: flex-start; flex-direction: column; gap: 9px; }
+  .public-footer-links { align-items: flex-start; flex-direction: column; gap: 9px; }
   .pricing-intro { padding: 45px 0 32px; }
   .organization-summary { align-items: flex-start; flex-direction: column; gap: 16px; }
   .api-key-create > div { align-items: stretch; flex-direction: column; }

@@ -8,7 +8,9 @@ function PublicHeader() {
         <span>WooCloud <small>CONTROL PLANE</small></span>
       </Link>
       <nav className="public-nav" aria-label="Public navigation">
+        <Link to="/features">Features</Link>
         <Link to="/pricing">Pricing</Link>
+        <Link to="/contact">Contact</Link>
         <Link to="/login">Sign in</Link>
         <Link className="button button-primary" to="/register">Get started</Link>
       </nav>
@@ -46,9 +48,9 @@ export default function Landing() {
           <div className="landing-activity">
             <div><span className="activity-dot activity-dot-live" />Provisioning storefront</div>
             <strong>Running</strong>
-            <div><span className="activity-dot" />SSL renewal queued</div>
+            <div><span className="activity-dot" />Store verification queued</div>
             <strong>Pending</strong>
-            <div><span className="activity-dot activity-dot-done" />Backup completed</div>
+            <div><span className="activity-dot activity-dot-done" />Store setup completed</div>
             <strong>Ready</strong>
           </div>
         </div>
@@ -72,7 +74,10 @@ export default function Landing() {
       </section>
       <footer className="public-footer">
         <span>WooCloud Control Plane</span>
-        <Link to="/pricing">Plans for every stage</Link>
+        <span className="public-footer-links">
+          <Link to="/features">See what is included</Link>
+          <Link to="/contact">Contact the team</Link>
+        </span>
       </footer>
     </main>
   );

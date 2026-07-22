@@ -62,9 +62,9 @@ func (h *Handler) SetCreateStoreOrchestrator(orchestrator *CreateStoreOrchestrat
 	return h
 }
 
-func (h *Handler) Handle(ctx context.Context, job jobrunner.Job) error {
+func (h *Handler) Handle(ctx context.Context, job jobrunner.Job) (json.RawMessage, error) {
 	if h == nil {
-		return fmt.Errorf("provision handler is not configured")
+		return nil, fmt.Errorf("provision handler is not configured")
 	}
 
 	switch strings.TrimSpace(job.Type) {
@@ -72,20 +72,20 @@ func (h *Handler) Handle(ctx context.Context, job jobrunner.Job) error {
 		if h.createStore != nil {
 			return h.createStore.CreateStore(ctx, job.Payload)
 		}
-		return h.executeWordPress(ctx, job.Payload, wpadapter.Operation{Name: "create-site", Payload: job.Payload})
+		return h.executeCreateStore(ctx, job.Payload)
 	case DeleteStore:
 		if h.wordpress == nil {
-			return fmt.Errorf("WordPress client is not configured")
+			return nil, fmt.Errorf("WordPress client is not configured")
 		}
 		resource, err := siteResource(job.Payload)
 		if err != nil {
-			return fmt.Errorf("delete store payload: %w", err)
+			return nil, fmt.Errorf("delete store payload: %w", err)
 		}
 		_, err = h.wordpress.Execute(ctx, wpadapter.Operation{
 			Name:     "delete-site",
 			Resource: resource,
 		})
-		return err
+		return nil, err
 	case ActivatePlugin:
 		return h.executeWordPress(ctx, job.Payload, wpadapter.Operation{Name: "activate-plugin", Payload: job.Payload})
 	case SwitchTheme:
@@ -95,32 +95,46 @@ func (h *Handler) Handle(ctx context.Context, job jobrunner.Job) error {
 	case SetOption:
 		return h.executeWordPress(ctx, job.Payload, wpadapter.Operation{Name: "set-option", Payload: job.Payload})
 	case BackupStore:
-		return h.handleBackup(ctx, job.Payload)
+		return nil, h.handleBackup(ctx, job.Payload)
 	case RestoreStore:
-		return h.handleRestore(ctx, job.Payload)
+		return nil, h.handleRestore(ctx, job.Payload)
 	case IssueSSL:
 		if h.ssl == nil {
-			return fmt.Errorf("SSL manager is not configured")
+			return nil, fmt.Errorf("SSL manager is not configured")
 		}
 		domain, err := stringField(job.Payload, "domain")
 		if err != nil {
-			return fmt.Errorf("issue SSL payload: %w", err)
+			return nil, fmt.Errorf("issue SSL payload: %w", err)
 		}
-		return h.ssl.Issue(ctx, domain)
+		return nil, h.ssl.Issue(ctx, domain)
 	default:
-		return fmt.Errorf("unsupported provisioning job type %q", job.Type)
+		return nil, fmt.Errorf("unsupported provisioning job type %q", job.Type)
 	}
 }
 
-func (h *Handler) executeWordPress(ctx context.Context, payload json.RawMessage, operation wpadapter.Operation) error {
+func (h *Handler) executeCreateStore(ctx context.Context, payload json.RawMessage) (json.RawMessage, error) {
 	if h.wordpress == nil {
-		return fmt.Errorf("WordPress client is not configured")
+		return nil, fmt.Errorf("WordPress client is not configured")
 	}
 	if err := validateObjectPayload(payload); err != nil {
-		return fmt.Errorf("%s payload: %w", operation.Name, err)
+		return nil, fmt.Errorf("create-site payload: %w", err)
+	}
+	result, err := h.wordpress.Execute(ctx, wpadapter.Operation{Name: "create-site", Payload: payload})
+	if err != nil {
+		return nil, err
+	}
+	return createStoreResult(result.Payload)
+}
+
+func (h *Handler) executeWordPress(ctx context.Context, payload json.RawMessage, operation wpadapter.Operation) (json.RawMessage, error) {
+	if h.wordpress == nil {
+		return nil, fmt.Errorf("WordPress client is not configured")
+	}
+	if err := validateObjectPayload(payload); err != nil {
+		return nil, fmt.Errorf("%s payload: %w", operation.Name, err)
 	}
 	_, err := h.wordpress.Execute(ctx, operation)
-	return err
+	return nil, err
 }
 
 func (h *Handler) handleBackup(ctx context.Context, payload json.RawMessage) error {

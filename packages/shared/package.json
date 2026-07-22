@@ -1,0 +1,9 @@
+{
+  "name": "@ooio/shared",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Browser code shared by apps/web, apps/ops and apps/admin. Consumed as TypeScript source through a path alias, not as a built package.",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts"
+}

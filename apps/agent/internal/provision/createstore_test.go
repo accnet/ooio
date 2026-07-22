@@ -41,7 +41,7 @@ func (f *createStoreWordPressFake) Execute(_ context.Context, operation wpadapte
 func TestCreateStoreOrchestratorRunsAllStepsInOrder(t *testing.T) {
 	var events []string
 	databaseFake := &createStoreDatabaseFake{}
-	wordpress := &createStoreWordPressFake{result: wpadapter.Result{Payload: []byte(`{"siteId":"created-1"}`)}}
+	wordpress := &createStoreWordPressFake{result: wpadapter.Result{Payload: []byte(`{"siteId":"42"}`)}}
 	action := func(name string) StoreAction {
 		return func(_ context.Context, state *StoreContext) error {
 			events = append(events, name+":"+state.Request.SiteID)
@@ -59,8 +59,12 @@ func TestCreateStoreOrchestratorRunsAllStepsInOrder(t *testing.T) {
 		Verify:               action("Verify"),
 	})
 
-	if err := orchestrator.CreateStore(context.Background(), json.RawMessage(`{"siteId":"store-1","domain":"store.example.test","title":"Store"}`)); err != nil {
+	result, err := orchestrator.CreateStore(context.Background(), json.RawMessage(`{"siteId":"store-1","domain":"store.example.test","title":"Store"}`))
+	if err != nil {
 		t.Fatalf("CreateStore() error = %v", err)
+	}
+	if string(result) != `{"blogId":42}` {
+		t.Fatalf("CreateStore() result = %s", result)
 	}
 	wantNames := []string{"AllocateDB", "CreateSite", "ActivateDistribution", "Configure", "CreateAdmin", "AddDomain", "Verify"}
 	steps := orchestrator.Steps()
@@ -75,11 +79,11 @@ func TestCreateStoreOrchestratorRunsAllStepsInOrder(t *testing.T) {
 		t.Fatalf("step names = %#v, want %#v", gotNames, wantNames)
 	}
 	if !reflect.DeepEqual(events, []string{
-		"ActivateDistribution:created-1",
-		"Configure:created-1",
-		"CreateAdmin:created-1",
-		"AddDomain:created-1",
-		"Verify:created-1",
+		"ActivateDistribution:42",
+		"Configure:42",
+		"CreateAdmin:42",
+		"AddDomain:42",
+		"Verify:42",
 	}) {
 		t.Fatalf("events = %#v", events)
 	}
@@ -100,7 +104,7 @@ func TestCreateStoreOrchestratorRollsBackInReverseOrder(t *testing.T) {
 		}
 	}
 	databaseFake := &createStoreDatabaseFake{}
-	wordpress := &createStoreWordPressFake{}
+	wordpress := &createStoreWordPressFake{result: wpadapter.Result{Payload: []byte(`{"siteId":"42"}`)}}
 	orchestrator := NewCreateStoreOrchestrator(CreateStoreDependencies{
 		Database:             databaseFake,
 		WordPress:            wordpress,
@@ -114,7 +118,7 @@ func TestCreateStoreOrchestratorRollsBackInReverseOrder(t *testing.T) {
 		RollbackVerify:       action("rollback-Verify", nil),
 	})
 
-	err := orchestrator.CreateStore(context.Background(), json.RawMessage(`{"domain":"store.example.test","title":"Store"}`))
+	_, err := orchestrator.CreateStore(context.Background(), json.RawMessage(`{"domain":"store.example.test","title":"Store"}`))
 	if err == nil || !strings.Contains(err.Error(), `step "Configure" failed`) {
 		t.Fatalf("CreateStore() error = %v", err)
 	}
@@ -142,7 +146,7 @@ func TestHandlerUsesCreateStoreOrchestratorWhenConfigured(t *testing.T) {
 		Rollback: func(context.Context, *StoreContext) error { return nil },
 	}})
 	handler := NewHandler(nil, nil, nil, nil, orchestrator)
-	if err := handler.Handle(context.Background(), jobrunnerJobCreateStore()); err != nil {
+	if _, err := handler.Handle(context.Background(), jobrunnerJobCreateStore()); err != nil {
 		t.Fatalf("Handle() error = %v", err)
 	}
 	if !called {

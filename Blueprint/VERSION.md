@@ -91,6 +91,9 @@ _Đính chính (không tăng version — sửa số liệu, không đổi quyế
   120 thrash ở cache mặc định 2000). Số bảng/store sửa **48 → 50** (`wp_users`/`wp_usermeta`
   là global trong Multisite nên không nằm trong tiền tố `wp_N_*`). Không đổi quyết định nào:
   đây là ràng buộc **cấu hình Runtime**, không phải giới hạn kiến trúc.
+- **2026-07-22** — Agent job result mở rộng additive: job `create-store` báo về
+  `{"blogId": <positive integer>}` trong trường `result` sau khi MU Plugin tạo blog thành công;
+  các job khác không bịa payload kết quả.
 
 _Lịch sử version_
 - **v1.1** — 2026-07-21 — Current. + AP-001/AP-002 (principles), ADR-006 Database Platform,
