@@ -1,0 +1,13 @@
+# Mirrors the working native dev env config, with the socket swapped for TCP
+# because php-fpm runs in a separate container here.
+#
+# php_fastcgi is what makes subdirectory multisite work: WordPress rewrites
+# /<slug>/ to index.php itself, and the PHP development server cannot do this —
+# every subsite path returns 404 under it.
+
+:80 {
+	root * /var/www/html
+	encode gzip
+	php_fastcgi wordpress:9000
+	file_server
+}

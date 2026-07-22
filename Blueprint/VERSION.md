@@ -95,6 +95,15 @@ _Đính chính (không tăng version — sửa số liệu, không đổi quyế
   `{"blogId": <positive integer>}` trong trường `result` sau khi MU Plugin tạo blog thành công;
   các job khác không bịa payload kết quả.
 
+- **2026-07-22** — `ADR-005` (Exit Criteria #1) và `ADR-003`: bổ sung **Spike Report #003
+  (provisioning ở quy mô)**. Tạo store trên Multisite **không suy giảm** — 100 store qua
+  toàn nền tảng cho đường cong phẳng (6.158→6.163 ms), 634 site qua wp-cli giữ p50
+  ~1,3–1,4 s xuyên qua điểm bão hoà cache. Cache bảng đầy ở 500 site core; quy đổi store
+  WooCommerce thật (50 bảng) thì trần là ~80 store/node ở `table_open_cache=4000`.
+  `ADR-003` nhận thêm một **câu hỏi mở đo được**: 94% thời gian khách chờ là Agent ngủ
+  giữa hai chu kỳ poll (công việc thật 382 ms / tổng 6.074 ms) — và **long-poll không vi
+  phạm outbound-only**, khác với webhook. Không đổi quyết định nào.
+
 _Lịch sử version_
 - **v1.1** — 2026-07-21 — Current. + AP-001/AP-002 (principles), ADR-006 Database Platform,
   ADR-007 Platform Identity; ADR-005 cập nhật tham chiếu database topology.

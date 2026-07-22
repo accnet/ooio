@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { Prisma, Operation } from '@prisma/client';
 import { Queue } from 'bullmq';
 import { AuditService } from '../audit/audit.service';
+import { DatabaseAllocationService } from '../das/das.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SchedulerService } from '../scheduler/scheduler.service';
 import { EventService } from '../events/events.service';
@@ -39,6 +40,7 @@ export class WorkflowService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly das: DatabaseAllocationService,
     private readonly scheduler: SchedulerService,
     private readonly events: EventService,
     config: ConfigService,
@@ -242,6 +244,27 @@ export class WorkflowService {
       }
       if (error !== undefined) {
         data.error = error;
+      }
+
+      // Database capacity is reserved before the Agent starts provisioning.
+      // Release it in this same transaction when create-store fails while the
+      // store has never reached active, so status and capacity cannot diverge.
+      if (
+        operation.status !== 'failed' &&
+        status === 'failed' &&
+        operation.type === 'create-store' &&
+        operation.storeId
+      ) {
+        const store = await tx.store.findUnique({
+          where: { id: operation.storeId },
+          select: { status: true },
+        });
+        if (store && ['provisioning', 'failed'].includes(store.status)) {
+          await this.das.release({
+            storeId: operation.storeId,
+            reason: `create-store failed: ${error || log.message || 'provisioning failed'}`,
+          }, tx);
+        }
       }
       const changed = await client.operation.update({ where: { id: operationId }, data });
 

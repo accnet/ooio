@@ -1,0 +1,99 @@
+# Reproducible Runtime environment for scale and isolation testing.
+#
+# WHAT THIS IS FOR: a disposable, identically-rebuildable WordPress Multisite
+# runtime, so a spike can be re-run from a known state instead of from whatever
+# the previous run left behind.
+#
+# WHAT THIS IS NOT FOR: performance numbers that decide ADR-005. Containers here
+# run on the same machine, the same disk and the same CPU as everything else —
+# Docker gives isolation and repeatability, NOT different hardware. Latency and
+# IOPS figures measured here describe this laptop, not a production node. Use it
+# for the two Exit Criteria that do not need target hardware (Restore Test,
+# Plugin Compatibility Matrix) and for isolation experiments, where the RELATIVE
+# effect is what matters.
+#
+#   docker compose -f infra/docker/compose.yaml up -d
+#   docker compose -f infra/docker/compose.yaml down -v      # -v wipes data
+
+name: ooio-runtime-test
+
+services:
+  mariadb:
+    image: mariadb:11.8
+    command:
+      - --innodb-file-per-table=1
+      - --innodb-buffer-pool-size=1G
+      # Left at defaults ON PURPOSE. Spike #002 showed the store ceiling per node
+      # is table_open_cache / hot tables per store; raising it here would hide the
+      # very wall the spike exists to find. Override per-run to test a tuned node.
+      - --table-open-cache=${MARIADB_TABLE_OPEN_CACHE:-2000}
+      - --open-files-limit=${MARIADB_OPEN_FILES_LIMIT:-32768}
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-rootpw}
+      MARIADB_DATABASE: ${WP_DB_NAME:-ooio_wp}
+      MARIADB_USER: ${WP_DB_USER:-ooio}
+      MARIADB_PASSWORD: ${WP_DB_PASSWORD:-ooiopw}
+    ulimits:
+      # Raising table_open_cache without raising the process fd limit just moves
+      # the wall to the OS instead of MariaDB — Spike #002, section on limits.
+      nofile:
+        soft: 1048576
+        hard: 1048576
+    volumes:
+      - mariadb-data:/var/lib/mysql
+    ports:
+      - "${MARIADB_PORT:-3310}:3306"
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "${REDIS_PORT:-6380}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  wordpress:
+    # php-fpm, not the built-in server: the PHP development server cannot serve
+    # subdirectory multisite at all — every subsite path 404s. Learned the hard
+    # way in the native dev env.
+    image: wordpress:php8.3-fpm
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    environment:
+      WORDPRESS_DB_HOST: mariadb:3306
+      WORDPRESS_DB_NAME: ${WP_DB_NAME:-ooio_wp}
+      WORDPRESS_DB_USER: ${WP_DB_USER:-ooio}
+      WORDPRESS_DB_PASSWORD: ${WP_DB_PASSWORD:-ooiopw}
+      WORDPRESS_CONFIG_EXTRA: |
+        define('WP_ALLOW_MULTISITE', true);
+        define('MULTISITE', true);
+        define('SUBDOMAIN_INSTALL', false);
+        define('DOMAIN_CURRENT_SITE', '${RUNTIME_DOMAIN:-localhost:8090}');
+        define('PATH_CURRENT_SITE', '/');
+        define('SITE_ID_CURRENT_SITE', 1);
+        define('BLOG_ID_CURRENT_SITE', 1);
+    volumes:
+      - wordpress-data:/var/www/html
+
+  caddy:
+    image: caddy:2-alpine
+    depends_on:
+      - wordpress
+    ports:
+      - "${HTTP_PORT:-8090}:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - wordpress-data:/var/www/html:ro
+
+volumes:
+  mariadb-data:
+  wordpress-data:

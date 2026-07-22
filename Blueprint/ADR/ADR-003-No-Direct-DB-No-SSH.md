@@ -79,3 +79,28 @@ tượng trong Agent để đổi giao thức không ảnh hưởng phần còn 
   `wp cron event run`) vẫn được phép chạy qua WP-CLI **do chính Agent thực thi cục
   bộ**, không phải ngoại lệ cho quy tắc "không SSH từ Control Plane" — Agent chạy
   ngay trên máy đó, không phải SSH từ xa.
+
+## Câu hỏi mở phát sinh từ đo đạc (2026-07-22)
+
+Mô hình outbound-only khiến Agent **hỏi việc theo chu kỳ** thay vì được đánh thức.
+Spike Report #003 đo được cái giá của điều đó:
+
+```
+MU Plugin tạo site thật                   382 ms
+Khách hàng chờ đầu-cuối                 6.074 ms
+PLATFORM_AGENT_POLL_INTERVAL                5 s
+```
+
+**94% thời gian khách hàng chờ là Agent đang ngủ**, không phải hệ thống đang làm việc.
+Đây không phải chi phí của kiến trúc mà là chi phí của **một dòng cấu hình** — nhưng
+cách khắc phục lại đụng chính ADR này:
+
+| Hướng | Đánh đổi |
+|---|---|
+| **Hạ `POLL_INTERVAL`** | Giữ nguyên outbound-only. Tải lên Control Plane tăng **tuyến tính theo số node** — 1.000 node × poll 1 s = 1.000 req/s chỉ để hỏi "có việc không". |
+| **Long-poll** (Agent giữ kết nối chờ) | **Vẫn là outbound-only** — Agent khởi tạo kết nối. Không vi phạm ADR này. Đổi lại Control Plane phải giữ nhiều kết nối mở. |
+| **Webhook / push xuống node** | **VI PHẠM ADR này** — cần đường vào từ Control Plane tới node. |
+
+**Chưa chốt.** Ghi nhận rằng **long-poll không vi phạm ADR-003** là điểm quan trọng: nó
+xoá gần hết thời gian chết mà vẫn giữ nguyên nguyên tắc outbound-only. Quyết định khi
+triển khai, dựa trên số node dự kiến và chi phí giữ kết nối.

@@ -12,6 +12,8 @@ import {
   DB_POOL_STATUSES,
   DbPoolStatus,
   RegisterPoolInput,
+  ReleaseDatabaseInput,
+  PoolCapacityReconciliation,
 } from './allocation.types';
 
 const ALLOCATION_BLOCKING_STATUSES = new Set<DbPoolStatus>([
@@ -116,6 +118,73 @@ export class DatabaseAllocationService {
     const result = tx ? await run(tx) : await this.prisma.$transaction(run);
 
     this.logger.log(`database allocation completed pool=${result.poolId} epoch=${result.epoch}`);
+    return result;
+  }
+
+  /**
+   * Release a reservation made before provisioning. Clearing the store's
+   * reference first makes the operation idempotent: a repeated failure or a
+   * concurrent retry observes no allocation and cannot decrement the pool a
+   * second time. The transaction rolls that clear back if the guarded pool
+   * decrement cannot be made.
+   */
+  async release(
+    input: ReleaseDatabaseInput,
+    tx?: Prisma.TransactionClient,
+  ): Promise<{ released: boolean; storeId: string; poolId: string | null }> {
+    if (!input.storeId?.trim() || !input.reason?.trim()) {
+      throw new ConflictException('storeId and reason are required for database release');
+    }
+
+    const run = async (transaction: Prisma.TransactionClient) => {
+      const db = transaction as any;
+      const store = await db.store.findUnique({
+        where: { id: input.storeId },
+        select: { id: true, dbPoolId: true },
+      });
+      if (!store) {
+        throw new NotFoundException('store not found');
+      }
+      if (!store.dbPoolId) {
+        return { released: false, storeId: input.storeId, poolId: null };
+      }
+
+      const poolId = store.dbPoolId;
+      const cleared = await db.store.updateMany({
+        where: { id: input.storeId, dbPoolId: poolId },
+        data: { dbPoolId: null, dataset: null },
+      });
+      if (cleared.count !== 1) {
+        return { released: false, storeId: input.storeId, poolId: null };
+      }
+
+      const decremented = await db.dbPool.updateMany({
+        where: { id: poolId, used: { gt: 0 } },
+        data: { used: { decrement: 1 } },
+      });
+      if (decremented.count !== 1) {
+        throw new ConflictException('database pool allocation is already exhausted; refusing to decrement below zero');
+      }
+
+      // StorePlacementHistory requires a destination pool. For a release, the
+      // fromPoolId is the meaningful value; toPoolId repeats it to preserve the
+      // existing non-null history contract while documenting the release reason.
+      await db.storePlacementHistory.create({
+        data: {
+          storeId: input.storeId,
+          fromPoolId: poolId,
+          toPoolId: poolId,
+          reason: input.reason.trim(),
+        },
+      });
+
+      return { released: true, storeId: input.storeId, poolId };
+    };
+
+    const result = tx ? await run(tx) : await this.prisma.$transaction(run);
+    if (result.released) {
+      this.logger.log(`database allocation released pool=${result.poolId} store=${result.storeId}`);
+    }
     return result;
   }
 
@@ -241,6 +310,56 @@ export class DatabaseAllocationService {
       orderBy: [{ clusterId: 'asc' }, { createdAt: 'asc' }],
     });
     return pools.map((pool: Record<string, unknown>) => this.poolView(pool));
+  }
+
+  /**
+   * Report capacity drift without repairing it. Active and provisioning stores
+   * are expected reservations; failed/deleted stores with a dataset are stale
+   * holders and are reported separately for an operator-directed cleanup.
+   */
+  async reconcilePoolCapacity(clusterId?: string): Promise<{
+    pools: PoolCapacityReconciliation[];
+    generatedAt: string;
+  }> {
+    const db = this.prisma as any;
+    const pools = await db.dbPool.findMany({
+      where: clusterId ? { clusterId } : undefined,
+      include: {
+        stores: {
+          where: { dataset: { not: null } },
+          select: { id: true, status: true },
+        },
+      },
+      orderBy: [{ clusterId: 'asc' }, { createdAt: 'asc' }],
+    });
+
+    const report = pools.map((pool: Record<string, any>): PoolCapacityReconciliation => {
+      const holders = Array.isArray(pool.stores) ? pool.stores : [];
+      const actualStoreCount = holders.filter((store: { status: string }) =>
+        store.status === 'active' || store.status === 'provisioning',
+      ).length;
+      const staleDatasetStoreCount = holders.length - actualStoreCount;
+      const discrepancy = pool.used - actualStoreCount;
+      if (discrepancy !== 0 || staleDatasetStoreCount !== 0) {
+        this.logger.warn(
+          `database pool capacity discrepancy pool=${pool.id} used=${pool.used} actual=${actualStoreCount} stale=${staleDatasetStoreCount}`,
+        );
+      }
+      return {
+        id: pool.id,
+        clusterId: pool.clusterId,
+        name: pool.name,
+        status: pool.status,
+        capacity: pool.capacity,
+        used: pool.used,
+        actualStoreCount,
+        datasetStoreCount: holders.length,
+        staleDatasetStoreCount,
+        discrepancy,
+      };
+    });
+
+    return { pools: report, generatedAt: new Date().toISOString() };
   }
 
   async getPool(id: string) {

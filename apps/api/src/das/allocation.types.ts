@@ -14,6 +14,24 @@ export interface AllocateDatabaseInput {
   clusterId: string;
 }
 
+export interface ReleaseDatabaseInput {
+  storeId: string;
+  reason: string;
+}
+
+export interface PoolCapacityReconciliation {
+  id: string;
+  clusterId: string;
+  name: string;
+  status: string;
+  capacity: number;
+  used: number;
+  actualStoreCount: number;
+  datasetStoreCount: number;
+  staleDatasetStoreCount: number;
+  discrepancy: number;
+}
+
 export interface DatabaseAllocation {
   poolId: string;
   dataset: string;

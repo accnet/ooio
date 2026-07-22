@@ -139,7 +139,21 @@ Hoàn thành tối thiểu cả bốn hạng mục, mỗi hạng mục ra một 
 
 1. **Runtime Spike** (Phase 1, tuần đầu): tạo 500–1000 site bằng WP-CLI/script; đo
    thời gian provisioning mỗi site, kích thước và hiệu năng các bảng multisite
-   (`wp_blogs`, `wp_site`...), HyperDB routing latency. → *Spike Report #001*.
+   (`wp_blogs`, `wp_site`...), routing latency. → *Spike Report #001*.
+
+   **MỘT PHẦN ĐÃ ĐO — Spike Report #003 (2026-07-22)**, xem
+   `scripts/spike/REPORT-003-provisioning-at-scale.md`:
+   - **Tạo store không suy giảm**: 634 site qua wp-cli, p50 giữ ~1,3–1,4 s xuyên qua
+     điểm bão hoà cache; và 100 store qua **toàn bộ nền tảng** cho đường cong **phẳng
+     tuyệt đối** (6.158 ms ở store 1–25 → 6.163 ms ở store 76–100). Trái ngược
+     database-per-store (Spike #001) nơi thời gian tăng 1,0 → 2,8 s.
+   - **Cache bảng bão hoà ở 500 site**: `Open_tables` chạm đúng `table_open_cache=4000`.
+   - ⚠️ **Số liệu này đánh giá thấp áp lực bảng 5 lần**: harness tạo site WordPress core
+     trần (~10 bảng/site), store WooCommerce thật có **50 bảng**. Quy đổi ra store thật,
+     trần ở cấu hình devenv là **80 store/node**. KHÔNG được đọc "634 site chạy tốt"
+     thành "634 store chạy tốt".
+   - **Vẫn thiếu**: đo **phục vụ** ở quy mô (thrash cache cắn ở đây, không phải lúc tạo),
+     site có WooCommerce ở quy mô, và phần cứng đích.
 2. **Isolation Benchmark** (Phase 5): kịch bản noisy-neighbor, đo CPU, PHP Worker,
    Redis, MySQL lock, Object Cache, Upload IO của store lân cận khi một store quá
    tải — đo **hai chế độ**: baseline (không có lớp bảo vệ) và có đủ 4 lớp
