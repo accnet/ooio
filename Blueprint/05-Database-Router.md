@@ -36,16 +36,26 @@ Database Router: blog_id → pool → connection
 MySQL database
 ```
 
-## Implementation hiện tại: H0
+## Implementation hiện tại: KHÔNG triển khai
 
-LudicrousDB đã được cài đặt để cung cấp seam này, nhưng **chưa định tuyến gì đặc biệt**:
+> **Cập nhật 2026-07-23 sau `ADR-005` (Accepted).** Một Cluster là một Multisite network
+> trên **một** database, nên `wpdb` chuẩn định tuyến được tất cả. Router không thêm khả
+> năng nào, chỉ thêm một drop-in và một bề mặt lỗi.
 
-- `db-config.php` hiện chỉ có **một** `add_database()` trỏ tới một database duy nhất.
-- Runtime hiện dùng đúng **một database**, chưa có mapping store → nhiều pool.
-- Hiện **không có `add_callback`**.
+Trạng thái thật, không tô hồng:
 
-Đây là trạng thái H0: interface tồn tại, implementation đang chạy single-database.
-Không được mô tả trạng thái này như đã có định tuyến đa pool.
+- `LUDICROUSDB_ENABLED` mặc định **`false`** trong `install-node.sh` và trong cả hai file
+  `node-config.env.*`. Node mới **không** nhận `db.php` drop-in.
+- Cờ được **giữ lại**, không xoá — một cluster nhiều pool trong tương lai sẽ cần bật lại.
+  `test-install-node.sh` có một lần chạy `LUDICROUSDB_ENABLED=true` để đảm bảo đường đó
+  chưa mục.
+- Trước ngày này, LudicrousDB **có** được cài nhưng **chưa từng định tuyến gì**:
+  `db-config.php` chỉ có **một** `add_database()` trỏ tới một database duy nhất, không có
+  `add_callback`. Nghĩa là việc gỡ nó **không mất khả năng nào đang dùng**.
+
+Tài liệu này vẫn tồn tại vì **interface vẫn còn giá trị**: nếu sau này một Cluster cần
+nhiều pool, đây là chỗ mô tả seam đó. Nhưng không được đọc nó như mô tả hệ thống đang
+chạy.
 
 ## LudicrousDB và bằng chứng lịch sử của HyperDB
 

@@ -8,7 +8,7 @@ set -euo pipefail
 # database and moves on. That answers "how fast can we make stores" but says
 # nothing about serving them, and it left the real question untouched: with 48
 # tables per WooCommerce store and table_open_cache entries shared across the whole
-# server, how many stores can be ACTIVE at once before MariaDB starts evicting and
+# server, how many stores can be ACTIVE at once before the server starts evicting and
 # reopening tables on every request?
 #
 # METHOD: cache thrashing is simply "working set larger than cache", so this does
@@ -21,7 +21,9 @@ set -euo pipefail
 # The second case is thrashing: each pass evicts the tables the next pass needs.
 # The growth of Opened_tables is the signal; wall time per pass shows the cost.
 
-MYSQL_BIN="${MYSQL_BIN:-mariadb}"
+# MySQL 8.4 is the deployment target (ADR-006); `mariadb` remains reachable by
+# setting MYSQL_BIN, since the historical Spike #001-#003 runs used it.
+MYSQL_BIN="${MYSQL_BIN:-mysql}"
 MYSQL_HOST="${MYSQL_HOST:-127.0.0.1}"
 MYSQL_PORT="${MYSQL_PORT:-3309}"
 MYSQL_USER="${MYSQL_USER:-root}"

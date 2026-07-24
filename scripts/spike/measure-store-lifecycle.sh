@@ -298,7 +298,7 @@ clone_multisite_impl() {
     # CREATE TABLE ... LIKE REJECTS the very table WordPress just made
     # ("ERROR 1067: Invalid default value for 'comment_date'"). Relax the mode
     # for this session so the clone reproduces the source faithfully instead of
-    # failing on a value the running site already contains. MariaDB is permissive
+    # failing on a value the running site already contains. MariaDB was permissive
     # by default, which is why this only appears on MySQL.
     mysql_cmd "$database" --execute="SET SESSION sql_mode='NO_ENGINE_SUBSTITUTION'; DROP TABLE IF EXISTS \`${target_table}\`; CREATE TABLE \`${target_table}\` LIKE \`${source_table}\`; INSERT INTO \`${target_table}\` SELECT * FROM \`${source_table}\`;"
     if [[ -n "$table_list" ]]; then table_list+=","; fi

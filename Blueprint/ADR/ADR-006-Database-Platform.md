@@ -61,7 +61,15 @@ không đổi tên bảng. Vì vậy nếu Runtime tiếp tục là Multisite, d
 global phải cùng một MySQL server để các JOIN liên database hoạt động; database-per-store
 không còn là isolation/portability đầy đủ của Isolated.
 
-### 2. Database Allocation Service (DAS) là thẩm quyền DUY NHẤT
+### 2. Allocation Service là thẩm quyền DUY NHẤT
+
+> **Hiệu chỉnh 2026-07-22 (ADR-005 Accepted).** Đơn vị cấp phát ở H0–H2 là **Cluster**,
+> không phải database: một Cluster = một Multisite network = một MySQL server = một
+> database. Nguyên tắc "một thẩm quyền duy nhất" **giữ nguyên**; chỉ đối tượng nó cấp
+> phát thì đổi. Sơ đồ dưới đây mô tả trạng thái đầy đủ (H3+); ở H0–H2 các thành phần
+> `Pool` đọc là `Cluster`, và `Migration Planner` là **biện pháp cuối** vì di chuyển
+> store giữa hai network là export/import đầy đủ (ADR-005).
+
 DAS thuộc Control Plane. **Scheduler không tự chọn database — Scheduler hỏi DAS.**
 ```
 DAS
@@ -79,8 +87,13 @@ khi nào failover / khi nào rebalance* đều thuộc DAS. **Runtime chỉ rout
 
 ### 3. Database Router chỉ là adapter
 Runtime chỉ làm đúng một việc: `blog_id → pool → connect`. Implementation có thể là
-`wpdb`, **LudicrousDB (hiện tại)**, HyperDB, ProxySQL, Vitess hoặc router riêng — **đổi
-implementation KHÔNG ảnh hưởng Control Plane**.
+`wpdb`, LudicrousDB, HyperDB, ProxySQL, Vitess hoặc router riêng — **đổi implementation
+KHÔNG ảnh hưởng Control Plane**.
+
+> **Hiệu chỉnh 2026-07-23.** Implementation hiện tại là **`wpdb` chuẩn**, không phải
+> LudicrousDB. `ADR-005` chốt một Cluster = một database nên không có gì để định tuyến;
+> `LUDICROUSDB_ENABLED` mặc định `false`. Chính nguyên lý "Router chỉ là adapter" là thứ
+> khiến việc gỡ nó **không tốn gì** — xem `Blueprint/05-Database-Router.md`.
 
 ### 4. Mapping có epoch + ACK (invariant an toàn dữ liệu)
 Mapping `blog_id → pool` tồn tại ở hai nơi (Control Plane là nguồn sự thật; node có bản
@@ -158,6 +171,11 @@ DB trên đường request nóng**. Global chỉ là nguồn sự thật để p
 { "poolId": "pool-a", "dataset": "store245",
   "connectionRef": "secret://pool-a", "epoch": 82 }
 ```
+> **Hiệu chỉnh 2026-07-22.** Ở H0–H2, `poolId` **là cluster id** và `dataset` là database
+> của cluster đó (mọi store trong cluster dùng chung). `epoch` giữ nguyên vai trò nhưng
+> không còn mapping per-store để đánh số — nó đánh số **cấu hình cluster**. Tên trường
+> giữ nguyên để không phá contract; ý nghĩa được ghi ở đây. Code trong `apps/api/src/das/`
+> còn dùng ngữ nghĩa cũ (`db_pools`) — cần một task đổi tên, **chưa làm**.
 **`connectionRef` là tham chiếu, KHÔNG phải credential.** Agent tự giải mã từ secret store
 cục bộ. **Credential không bao giờ xuất hiện trong payload của Operation** — job đi qua
 hàng đợi và log.

@@ -14,10 +14,14 @@ WordPress Runtime) sau. Các bản kế hoạch đầu (`idea/plan.md`, `plan-5`
 
 Tuy nhiên, khi phân tích kỹ, rủi ro kỹ thuật lớn nhất của nền tảng này không nằm ở
 Control Plane (NestJS là công nghệ quen thuộc, nghiệp vụ billing/auth đã có nhiều
-tham chiếu) mà nằm ở khả năng vận hành **WordPress Multisite + WooCommerce + HyperDB**
-ở quy mô hàng trăm đến hàng nghìn store: giới hạn PHP-FPM, hiệu năng HyperDB routing,
-Action Scheduler của WooCommerce dưới tải, chiến lược database pool, backup ở quy mô
-lớn... Đây đều là những ẩn số chưa được kiểm chứng.
+tham chiếu) mà nằm ở khả năng vận hành **WordPress Multisite + WooCommerce** ở quy mô
+hàng trăm đến hàng nghìn store: giới hạn PHP-FPM, Action Scheduler của WooCommerce dưới
+tải, chiến lược database, backup ở quy mô lớn... Đây đều là những ẩn số chưa được kiểm
+chứng.
+
+> **Đính chính 2026-07-23:** bản gốc liệt kê "HyperDB" và "hiệu năng HyperDB routing" như
+> một thành phần kiến trúc. `ADR-005` đã bỏ Database Router, và HyperDB thì fatal trên
+> WP 7.0 + WooCommerce. Giữ lại nguyên lý Runtime-First; bỏ tên implementation.
 
 ## Quyết định
 

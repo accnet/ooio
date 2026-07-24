@@ -2,7 +2,7 @@
 
 ## Status
 
-**Accepted** (nguyên tắc chính) + **Open** (transport cụ thể Agent↔MU Plugin) — nguồn
+**Accepted** — nguyên tắc chính VÀ transport (REST/HTTP localhost, chốt 2026-07-23) — nguồn
 thẩm quyền: `idea/plan-3.md`, `idea/plan-4.md`, củng cố bởi `idea/plan-12.md`. Xem
 `Blueprint/DOC-STATUS.md` để hiểu quy ước phân loại.
 
@@ -29,11 +29,19 @@ vì qua WordPress Core API, vì "nhanh hơn viết REST".
 - MU Plugin chỉ bind localhost, không public ra Internet; Agent là client duy nhất được
   phép gọi.
 
-**Open (chưa chốt):**
+**~~Open~~ → CHỐT 2026-07-23 (Runtime Freeze):**
 
-- Giao thức cụ thể giữa Agent và MU Plugin: REST hay Unix Domain Socket — xem mục
-  "Alternatives Considered" bên dưới. Nguyên tắc "không ghi thẳng DB, phải qua MU Plugin"
-  đã chốt; **cách gọi MU Plugin (giao thức tầng vận chuyển) thì chưa**.
+- Giao thức Agent ↔ MU Plugin là **REST qua HTTP trên localhost**. Đây không phải lựa chọn
+  mới — đó là thứ **đã hiện thực và đã chạy thật**: MU Plugin đăng ký
+  `register_rest_route('platform/v1', …)` (`src/Rest/Controller.php:23`) và Agent gọi qua
+  `wpclient.NewHTTPClientWithClient(baseURL, authToken, …)`
+  (`internal/wpclient/client.go:47`), có xác thực bằng shared secret.
+- Luồng 3-plane đã được chứng minh đầu-cuối qua đường này (`POST /stores` → Agent →
+  WordPress → storefront browsable), và toàn bộ Spike #003–#012 chạy trên nó.
+- Unix Domain Socket **không bị loại vĩnh viễn** — nó nằm ở mục *Alternatives Considered*
+  bên dưới và là đường nâng cấp hợp lệ nếu sau này cần bỏ hẳn TCP loopback. Nhưng đóng
+  băng Runtime ở trạng thái "chưa chốt transport" trong khi transport **đã chạy production
+  path** là ghi sai sự thật.
 
 ## Alternatives Considered
 

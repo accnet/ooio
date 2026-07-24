@@ -2,7 +2,7 @@
 
 ## Status
 
-**Accepted** (Distribution là artifact có version) + **Proposed** (giả định lưu trữ
+**Accepted** — Distribution là artifact có version; giả định Shared Runtime đã đo (Spike #004, 2026-07-23). (nguồn lưu trữ
 shared vs clone-per-store, xem mục "Current Assumption" bên dưới) — nguồn thẩm quyền:
 `idea/plan-8.md`, củng cố bởi `idea/plan-9.md`, `idea/plan-11.md`, `idea/plan-12.md`.
 Xem `Blueprint/DOC-STATUS.md` để hiểu quy ước phân loại.
@@ -26,7 +26,18 @@ Khi tạo store, Agent chỉ cần **clone/activate đúng version Distribution*
 không cài đặt từng phần tử rời rạc và không tải từ nguồn bên ngoài (WordPress.org) tại
 thời điểm provisioning.
 
-## Current Assumption (Proposed, chưa được nguồn xác nhận)
+## ~~Current Assumption (Proposed)~~ → ĐÃ ĐO, CHỐT 2026-07-23
+
+> **Spike #004 Phát hiện 5** (`scripts/spike/REPORT-004-topology-lifecycle.md`) đo trực
+> tiếp giả định này:
+>
+> | Cách | Thời gian/store | File tạo | Đĩa thêm |
+> |---|---|---|---|
+> | **symlink tới codebase chung** | **21 ms** | 1 | **0 MB** |
+> | copy riêng mỗi store | 1.351 ms | 10.818 | **145 MB** |
+>
+> Chênh **64×** thời gian và **145 MB mỗi store**. Với 1.000 store: 0 GB so với 145 GB.
+> Giả định Shared Runtime **đúng và có số**; nó không còn là Proposed.
 
 Giả định đang dùng: **Shared Runtime** — nhiều store cùng version Distribution dùng
 chung một bản mã nguồn/asset trên Node (qua symlink hoặc mount chung), không clone toàn

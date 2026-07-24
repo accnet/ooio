@@ -1,0 +1,13 @@
+mechanism,phase,workers,p50_ms,p95_ms,max_ms,errors
+baseline,none,0,77,83,83,0
+cpu,loaded,8,102,116,116,0
+baseline,none,0,77,84,84,0
+cpu,loaded,16,120,152,152,0
+baseline,none,0,80,85,85,0
+cpu,loaded,32,129,161,161,0
+baseline,none,0,81,89,89,0
+connections,loaded,117,74,95,95,0
+baseline,none,0,85,92,92,0
+baseline,none,0,78,93,93,0
+connections,loaded,118,80,95,95,0
+php-connection-ceiling,loaded,60,0,0,0,0

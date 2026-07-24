@@ -1,5 +1,11 @@
 # 18 · SaaS Control Plane — Implementation Plan
 
+> **Trạng thái 2026-07-23:** Runtime đã Freeze (`RUNTIME-FREEZE.md`); tài liệu này trở
+> thành tài liệu chính của Phase 2. **Đọc `SAAS-PHASE2-GAP.md` trước** — nó đối chiếu
+> roadmap S1–S9 với 20 module và 22 bảng **đã hiện thực**, và chỉ ra bốn chỗ trong tài liệu
+> này đã lỗi thời.
+
+
 > **Phạm vi: 100% Control Plane (SaaS Platform).** Tài liệu này trả lời *"làm thế nào xây
 > SaaS quản lý WooCommerce Cloud Platform"*. Runtime/WordPress, Database Router, Go Agent,
 > Distribution **không** mô tả chi tiết ở đây — xem `19-Runtime-Implementation.md`,
@@ -22,8 +28,8 @@ Xây **Control Plane** điều phối toàn bộ platform: quản lý người d
 vòng đời cửa hàng, workflow/vận hành, phân phối Distribution, và giám sát cluster — trên
 nền Runtime WordPress đã có. **Trong phạm vi:** NestJS API, Dashboard, Worker, Workflow,
 Scheduler, Cluster Registry, Billing, Marketplace, Analytics, Audit, Notifications.
-**Ngoài phạm vi (tài liệu khác):** nội bộ WordPress/MU Plugin, Database Router, Agent, Distribution
-build. **Mục tiêu quy mô:** vài trăm → vài nghìn store; Control Plane độc lập hoàn toàn với
+**Ngoài phạm vi (tài liệu khác):** nội bộ WordPress/MU Plugin, Agent, Distribution build.
+*(Bỏ "Database Router" — không còn tồn tại theo `ADR-005`.)* **Mục tiêu quy mô:** vài trăm → vài nghìn store; Control Plane độc lập hoàn toàn với
 Runtime để sau này cắm thêm runtime khác (Magento/headless) mà không đổi SaaS.
 
 ## 2. Technology Stack
@@ -37,7 +43,32 @@ API là **nơi duy nhất** truy cập PostgreSQL/Redis/BullMQ. Dashboard là SP
 API qua JWT/HTTPS, không chạm DB.
 
 ## 3. Repository Structure
-Monorepo cho Control Plane; Runtime là repo **riêng**.
+
+> **Cập nhật 2026-07-23 — mục này đã lỗi thời, ghi lại theo repo thật.** Bản gốc mô tả hai
+> repo tách rời (`woocloud-control-plane` + `woocloud-runtime`). Thực tế là **một monorepo
+> duy nhất**, và dashboard đã tách thành **ba SPA theo ranh giới uỷ quyền**. Xem
+> `SAAS-PHASE2-GAP.md`.
+
+```
+ooio/                        ← MỘT monorepo
+  apps/
+    api/                     NestJS Control Plane (20 module)
+    agent/                   Go Agent
+    web/                     SPA khách hàng          (woocloud.*)
+    ops/                     SPA vận hành, operator  (ooio.ops.*)
+    admin/                   SPA hỗ trợ, support     (ooio.support.*)
+    cli/  worker/  scheduler/
+  packages/   shared/
+  runtime/    mu-plugin/  distribution/
+  infra/      Blueprint/  scripts/
+```
+
+**Ba SPA tách rời là quyết định BẢO MẬT, không phải tổ chức thư mục.** Ranh giới gắn với
+`platform-role.guard.ts` và `User.platformRoles`; mỗi app có token storage key riêng. Gộp
+lại thành ba route trong một app sẽ bỏ ranh giới đó — cần một ADR nếu muốn đổi.
+
+<details><summary>Cấu trúc gốc (giữ để đối chiếu)</summary>
+
 ```
 woocloud-control-plane/           woocloud-runtime/   (repo riêng)
   apps/ api  dashboard  worker       agent/
@@ -45,6 +76,7 @@ woocloud-control-plane/           woocloud-runtime/   (repo riêng)
   infra/                             distribution/
   docs/  .github/                    configs/ scripts/ docs/
 ```
+</details>
 `packages/contracts` = OpenAPI + schema đóng băng; `packages/sdk` = client sinh tự động.
 
 ## 4. Domain-Driven Design (Bounded Contexts)

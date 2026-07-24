@@ -1,14 +1,35 @@
-# Secrets
+# =============================================================================
+# Secrets & Environment
+# =============================================================================
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets.*
+credentials.*
+*secret*
+!*.secret.example
 
+# =============================================================================
 # Dependencies
+# =============================================================================
 node_modules/
+vendor/
+.pnpm-store/
 
-# Build output
+# =============================================================================
+# Build Output
+# =============================================================================
 dist/
+dist-test/
 *.tsbuildinfo
+build/
+out/
 
-# AI-Kit workspace state
+# =============================================================================
+# AI-Kit Workspace State
+# =============================================================================
 .ai-work/*
 !.ai-work/
 !.ai-work/project.yaml
@@ -16,3 +37,110 @@ dist/
 !.ai-work/security.yaml
 !.ai-work/plugins/
 !.ai-work/plugins/**
+
+# =============================================================================
+# IDE & Editor
+# =============================================================================
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/tasks.json
+!.vscode/launch.json
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+*.sublime-workspace
+*.sublime-project
+
+# =============================================================================
+# OS Generated
+# =============================================================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# =============================================================================
+# Logs
+# =============================================================================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# =============================================================================
+# Testing & Coverage
+# =============================================================================
+coverage/
+.nyc_output/
+*.lcov
+.coverage
+
+# =============================================================================
+# WordPress (Runtime)
+# =============================================================================
+wp-config.php
+!wp-config-sample.php
+wp-content/uploads/
+wp-content/upgrade/
+wp-content/cache/
+wp-content/debug.log
+wp-content/backup*/
+wp-content/blogs.dir/
+sitemap.xml
+sitemap.xml.gz
+wp-snapshots/
+
+# =============================================================================
+# Infrastructure
+# =============================================================================
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+terraform.tfvars
+!terraform.tfvars.example
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+crash.log
+crash.*.log
+
+# Ansible
+*.retry
+ansible/roles/external/
+
+# Docker
+docker-compose.override.yml
+
+# =============================================================================
+# Package Lock Files (giữ lock file để reproducible builds)
+# =============================================================================
+# package-lock.json được commit
+# composer.lock được commit
+
+# =============================================================================
+# Misc
+# =============================================================================
+.cache/
+tmp/
+temp/
+*.tmp
+*.bak
+*.orig
+*.patch
+local.env
+

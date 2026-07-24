@@ -5,6 +5,30 @@ set -euo pipefail
 # Measure whether an existing store can be exported and imported into another
 # network. This harness is intentionally disposable and is never run as part
 # of repository verification.
+#
+# The headline output is NOT elapsed time — it is `user_id_references_to_remap`.
+# Time can be optimised; the remap count is structural. Under Multisite `wp_users`
+# is global to the network, so a store leaving that network loses every identity
+# its rows point at: post_author, comments.user_id, wc_orders.customer_id and the
+# `wp_N_capabilities` key in the global wp_usermeta. Under Isolated the users
+# travel inside the database, so the count is zero by construction — not by being
+# faster at the same work.
+#
+# Measured on the dev network 2026-07-23, per store with 20 products and no
+# orders: 27 post_author + 0 comments + 0 customer_id + 1 capabilities = 28
+# references. A store with real customers and order history scales the first and
+# third terms with its trading volume; the count is therefore a floor, not a
+# typical value.
+#
+# When a source user's login or email already exists in the target network the
+# mapping is ambiguous and this harness records
+# `manual_intervention_required / identity_collision` rather than guessing. That
+# row is the point of the whole measurement: it is the step that cannot be
+# automated, and it is why ADR-005 calls a store move an expensive operation.
+#
+# NOTE 2026-07-23: the HPOS tables this harness needs (`wp_N_wc_orders`) now
+# exist in the dev environment, so the historical blocker is gone. A full run
+# still needs a SECOND network database to import into.
 SPIKE_OPERATION="${SPIKE_OPERATION:-all}"
 SPIKE_LOG_DIR="${SPIKE_LOG_DIR:-./spike-004-portability}"
 SPIKE_OUTPUT="${SPIKE_OUTPUT:-${SPIKE_LOG_DIR}/store-portability.csv}"

@@ -1,0 +1,15 @@
+plugin,group,install,network_activate,http_codes,dropin_added,global_meta_delta,verdict
+wordpress-seo,SEO,ok,ok,"200 200 200 200 200 200",,0,chay-duoc
+seo-by-rank-math,SEO,ok,ok,"200 200 200 200 200 200",,0,chay-duoc
+w3-total-cache,cache,ok,ok,"307 200 200 307 200 200",advanced-cache.php ,0,HONG-STORE
+wp-super-cache,cache,ok,ok,"200 200 200 200 200 200",advanced-cache.php wp-cache-config.php ,0,chay-duoc-NHUNG-ghi-dropin
+litespeed-cache,cache,ok,ok,"200 200 200 200 200 200",,0,chay-duoc
+woocommerce-gateway-stripe,thanh-toan,ok,ok,"200 200 200 200 200 200",,0,chay-duoc
+woo-stripe-payment,thanh-toan,ok,ok,"200 200 200 200 200 200",,0,chay-duoc
+flexible-shipping,van-chuyen,ok,ok,"200 200 200 200 200 200",,0,chay-duoc
+woocommerce-shipping,van-chuyen,ok,ok,"200 200 200 200 200 200",,0,chay-duoc
+elementor,builder,ok,ok,"200 200 200 200 200 200",,0,chay-duoc
+contact-form-7,form,ok,ok,"200 200 200 200 200 200",,0,chay-duoc
+wpforms-lite,form,ok,ok,"200 200 200 200 200 200",,0,chay-duoc
+redirection,tien-ich,ok,ok,"200 200 200 200 200 200",,0,chay-duoc
+wordfence,bao-mat,ok,ok,"200 200 200 200 200 200",,1,chay-duoc

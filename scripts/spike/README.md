@@ -30,9 +30,10 @@ documented baseline and preserve the generated CSV files with the report.
 - WP-CLI available as `wp`, or set `WP_BIN` to its executable path.
 - A test database and disposable network. Do not use production data.
 - HyperDB configured if routing latency is being measured.
-- MySQL or MariaDB client available as `mysql`, or set `MYSQL_BIN` to its path.
+- MySQL client available as `mysql`, or set `MYSQL_BIN` to its path. MySQL 8.4 is the
+  deployment target (ADR-006); a MariaDB client still works for historical reruns.
 - `curl` is required only when the optional MU Plugin REST comparison is enabled.
-- A disposable MySQL or MariaDB server with permission to create and drop the
+- A disposable MySQL 8.4 server with permission to create and drop the
   `store_<numeric-id>` databases. Prefer an option file for credentials; the
   scripts also accept `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_SOCKET`, `MYSQL_USER`,
   and `MYSQL_PASSWORD`.

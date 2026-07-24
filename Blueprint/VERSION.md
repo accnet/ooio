@@ -103,6 +103,25 @@ _Đính chính (không tăng version — sửa số liệu, không đổi quyế
   `{"blogId": <positive integer>}` trong trường `result` sau khi MU Plugin tạo blog thành công;
   các job khác không bịa payload kết quả.
 
+- **2026-07-23** — **RUNTIME FREEZE v1.0.** Thêm `RUNTIME-FREEZE.md`; `DEPLOYMENT-PLAN.md`
+  trở thành **Baseline Production v1**; `ADR-005` chuyển sang **Accepted (Frozen)**. Đóng
+  hai mục con còn treo **bằng bằng chứng đã có**: `ADR-003` chốt transport Agent↔MU Plugin
+  là REST/HTTP localhost (đã hiện thực và chạy thật), `ADR-004` bỏ nhãn *Proposed* cho giả
+  định Shared Runtime (Spike #004: symlink 21 ms/0 byte so với copy 1.351 ms/145 MB).
+  Freeze ghi kèm **danh sách nợ đo lường** — IO, phần cứng thật, tỉ lệ bypass cache, khách
+  đăng nhập — để "frozen" không bị đọc thành "đã đo hết".
+- **2026-07-23** — Thêm `21-Performance-Baseline.md`: bảng baseline hiệu năng **chỉ chứa số
+  đo được**, có nguồn từng dòng, và một mục *"chưa đo — không được điền số"*. Ba con số
+  dẫn dắt: đường tĩnh nhanh hơn PHP **14×**, OPcache **không** phải nút thắt (dư 20× số
+  file) nhưng cold start là **49,3%**, và PHP-FPM tỉ lệ với **đồng thời** chứ không với số
+  store. Kèm công thức sizing worker `min(RAM/PSS, CPU/service_time)` — vế thứ hai **phải
+  đo**, không tính được.
+- **2026-07-23** — Gỡ nốt mâu thuẫn Router khỏi Blueprint (SA34): `ADR-006 §3` không còn
+  ghi "LudicrousDB (hiện tại)" — implementation hiện tại là `wpdb` chuẩn;
+  `05-Database-Router.md` ghi trạng thái thật là **KHÔNG triển khai**
+  (`LUDICROUSDB_ENABLED=false`); `ADR-001` bỏ "HyperDB" khỏi danh sách thành phần kiến
+  trúc; `ADR-005` Exit Criteria #4 bỏ "HyperDB routing". Đổi cách diễn đạt, **không đổi
+  quyết định nào**.
 - **2026-07-22** — Đính chính tài liệu: đổi tên `05-HyperDB.md` thành
   `05-Database-Router.md` và chuẩn hoá tên gọi theo interface Database Router; LudicrousDB
   vẫn chỉ là một implementation. **Không đổi quyết định kiến trúc nào.**

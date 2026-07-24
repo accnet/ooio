@@ -1,0 +1,15 @@
+route,http,deterministic,diff_lines,set_cookie_headers,verdict
+trang chu,200,yes,51,0,cacheable-chi-khac-prefetch
+shop,200,yes,53,0,KHONG-cacheable
+san pham,200,yes,53,0,KHONG-cacheable
+danh muc,200,yes,51,0,cacheable-chi-khac-prefetch
+cart,200,no,62,0,RENDER-KHONG-TAT-DINH
+checkout,302,yes,412,0,KHONG-cacheable
+my-account,200,yes,53,0,KHONG-cacheable
+add-to-cart,200,yes,0,1,cacheable-neu-bo-Set-Cookie
+tim kiem,200,yes,51,0,cacheable-chi-khac-prefetch
+wp-json wc,200,yes,0,0,cacheable
+feed,200,yes,0,0,cacheable
+trang chu,200,yes,51,0,cacheable-chi-khac-prefetch
+shop,200,yes,67,0,KHONG-cacheable
+san pham,200,yes,53,0,KHONG-cacheable

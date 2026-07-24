@@ -15,7 +15,10 @@ clone hoặc catch-up có thể làm trực tiếp. Vitess ở ADR-006 mục 3 c
 
 MySQL 8.4 đã bỏ `mysql_native_password` và mặc định dùng `caching_sha2_password`.
 Lỗi tương thích này chỉ lộ ra lúc **kết nối**, không lộ ra lúc build. Mọi số liệu của
-Spike 001, 002 và 003 trước đây đều đo trên MariaDB, vì vậy phải đo lại trên MySQL 8.4
+Spike 001, 002 và 003 đều đo trên MariaDB. **Đã đo lại trên MySQL 8.4** — Spike #004
+(`scripts/spike/REPORT-004-topology-lifecycle.md`) chạy cả hai topology trên cùng nền
+MySQL 8.4 và thấy chênh lệch engine ~4%. Số cũ vẫn dùng được về xu hướng, nhưng giá trị
+tuyệt đối phải lấy từ #004 trở đi. Nguyên tắc giữ nguyên: phải đo lại trên MySQL 8.4
 trước khi dùng để chốt ngưỡng hoặc trọng số placement.
 
 ## Docker ở đây thay được VPS tới đâu

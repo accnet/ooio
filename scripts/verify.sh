@@ -47,9 +47,15 @@ case "${1:-all}" in
     done
     ;;
   test)
-    # Only the Go agent has a real suite. The SPA `test` scripts are echo
-    # placeholders, so running them would report a pass that means nothing.
+    # The SPA `test` scripts are echo placeholders, so running them would report
+    # a pass that means nothing. The api suite uses node:test compiled by tsc —
+    # no test framework dependency.
+    run "api test"   in_dir apps/api npm test
     run "agent test" in_dir apps/agent go test ./...
+    # Every store in a cluster receives the core plugin set, so a regression here
+    # multiplies by store count — see runtime/distribution/core-plugin-set.json.
+    run "plugin set"  bash runtime/distribution/test-plugin-set.sh
+    run "node installer" bash apps/agent/deploy/test-install-node.sh
     ;;
   typecheck)
     run "api typecheck" in_dir apps/api npm run typecheck

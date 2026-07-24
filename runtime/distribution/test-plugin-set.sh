@@ -26,7 +26,6 @@ required_slugs = {
     "redis-cache",
     "wordpress-seo",
     "wp-mail-smtp",
-    "wordfence",
     "ewww-image-optimizer",
     "backup-client",
     "platform-connector",
@@ -49,6 +48,22 @@ for plugin in plugins:
 missing = required_slugs - seen_slugs
 if missing:
     raise SystemExit("missing required plugins: " + ", ".join(sorted(missing)))
+
+# A plugin removed for a measured reason must not drift back in silently. Every
+# store in a cluster gets this set, so a regression here multiplies by store
+# count. Re-adding one requires deleting its `excluded` entry deliberately.
+excluded = manifest.get("excluded", [])
+if not isinstance(excluded, list):
+    raise SystemExit("`excluded` must be an array")
+for entry in excluded:
+    for field in ("slug", "removed", "reason", "replacement", "reinstate_if"):
+        if not isinstance(entry.get(field), str) or not entry[field]:
+            raise SystemExit(f"excluded entry requires a non-empty {field}")
+    if entry["slug"] in seen_slugs:
+        raise SystemExit(
+            f"{entry['slug']} is listed in `plugins` but also in `excluded` "
+            f"(removed {entry['removed']}): {entry['reason']}"
+        )
 PY
 
 bash -n "$SCRIPT_DIR/install-plugins.sh" "$SCRIPT_DIR/test-plugin-set.sh"
